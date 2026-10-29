@@ -46,7 +46,7 @@ The examples below use TypeScript for illustration; the workflow is identical in
 
 ### Step 1: RED — Write a Failing Test
 
-Write the test first. It must fail. A test that passes immediately proves nothing.
+Write the test first. It must fail, and for the reason you expect: a failure from an import error or a typo in the test proves nothing either. A test that passes immediately proves nothing.
 
 ```typescript
 // RED: This test fails because createTask doesn't exist yet
@@ -138,6 +138,8 @@ export async function completeTask(id: string): Promise<Task> {
 
 // Step 3: Test passes → bug fixed, regression guarded
 ```
+
+**Fix the cause, not the symptom.** A guard that only stops the crash (a broad `except`, an `if x is None: return`) without explaining why the bad state happened is not a fix; the test should pin the cause. If two fixes that rest on the same assumption fail the same test, stop: write that assumption down in one sentence and check it before trying a third.
 
 ## The Test Pyramid
 
@@ -301,6 +303,7 @@ describe('TaskService', () => {
 | Anti-Pattern | Problem | Fix |
 |---|---|---|
 | Testing implementation details | Tests break when refactoring even if behavior is unchanged | Test inputs and outputs, not internal structure |
+| Tests that can't fail | Would still pass if the code under test returned `None` or did nothing | Assert on the value or effect the caller actually sees |
 | Flaky tests (timing, order-dependent) | Erode trust in the test suite | Use deterministic assertions, isolate test state |
 | Testing framework code | Wastes time testing third-party behavior | Only test YOUR code |
 | Snapshot abuse | Large snapshots nobody reviews, break on any change | Use snapshots sparingly and review every change |
