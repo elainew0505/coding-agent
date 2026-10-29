@@ -4,10 +4,9 @@ from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from coding_agent.sandbox import CommandResult
+from coding_agent.sandbox import COMMAND_TIMEOUT, CommandResult
 from coding_agent.tools import ToolResult
 
-DEFAULT_TIMEOUT = 120
 MAX_OUTPUT = 30_000
 
 
@@ -26,7 +25,7 @@ class BashTool:
         self,
         session: BashSession,
         *,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float = COMMAND_TIMEOUT,
         max_output: int = MAX_OUTPUT,
     ):
         self.session = session

@@ -22,6 +22,8 @@ DEFAULT_IMAGE = (
 )
 WORKSPACE = "/workspace"
 CONTAINER_LABEL = "coding-agent"
+COMMAND_TIMEOUT = 120
+"""Seconds a command may run before it is killed (SPEC.md § Limits)."""
 
 # Bytes of bash output kept in memory per command: half from the start, half from the
 # end. Bounds memory for commands like `yes`; the tool truncates far below this anyway.
@@ -104,18 +106,11 @@ class Sandbox:
             self._shell.close()
         self._remove()
 
-    def exec(
-        self, command: list[str], *, timeout: float = 120, stdin: str | None = None
-    ) -> CommandResult:
+    def exec(self, command: list[str], *, timeout: float = COMMAND_TIMEOUT) -> CommandResult:
         """Run one command in the container; stdout and stderr are combined."""
-        args = ["docker", "exec"]
-        if stdin is not None:
-            args.append("--interactive")
-        args += [self.name, *command]
         try:
             completed = subprocess.run(
-                args,
-                input=stdin.encode() if stdin is not None else None,
+                ["docker", "exec", self.name, *command],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=timeout,
