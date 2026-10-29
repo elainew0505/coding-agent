@@ -90,13 +90,14 @@ If Slice 1 fails, you discover it before investing in Slices 2 and 3.
 
 ### Rule 0: Simplicity First
 
-Before writing any code, ask: "What is the simplest thing that could work?"
+Before writing any code, ask: "What is the simplest thing that could work?" Then ask whether you can take something out first: removing a special case or an unused path often makes the change smaller than adding to it.
 
 After writing code, review it against these checks:
 - Can this be done in fewer lines?
 - Are these abstractions earning their complexity?
 - Would a staff engineer look at this and say "why didn't you just..."?
 - Am I building for hypothetical future requirements, or the current task?
+- Does each decision (a limit, a path rule, a flag) still live in exactly one place?
 
 ```
 SIMPLICITY CHECK:

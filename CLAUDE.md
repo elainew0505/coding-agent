@@ -67,7 +67,23 @@ Update docs in the same commit as the behavior they describe. A PR that changes 
 
 No separate architecture doc: the spec, decision records and this file cover it.
 
+## Working style
+
+- Make the smallest change that solves the task. Take code out before adding more, and don't refactor or add features nobody asked for.
+- Work in thin slices: one failing test, the minimal fix, then check before the next step.
+- Before starting a task, read `SPEC.md` and `tasks/todo.md`. Change the spec before changing a decision recorded in it.
+
 ## Skills
 
-Project skills live in `.claude/skills/` (from addyosmani/agent-skills, MIT; edited locally):
-spec-driven-development, planning-and-task-breakdown, incremental-implementation, test-driven-development, git-workflow-and-versioning, security-and-hardening, source-driven-development, context-engineering.
+Project skills live in `.claude/skills/` (from addyosmani/agent-skills, MIT; edited locally). Only their descriptions are always loaded, so invoke the ones that apply:
+
+| When | Skill |
+|---|---|
+| Requirements are new or unclear; no spec exists | `spec-driven-development` |
+| Breaking a spec into tasks | `planning-and-task-breakdown` |
+| Any change touching more than one file | `incremental-implementation` |
+| Any logic, bug fix or behavior change | `test-driven-development` |
+| Sandbox, path checks, tool handlers, config or secrets, fixtures, dependencies | `security-and-hardening` |
+| Using an `anthropic` SDK or API feature | `source-driven-development` |
+| Committing, branching, opening a PR | `git-workflow-and-versioning` |
+| Starting a session or when output quality drops | `context-engineering` |
