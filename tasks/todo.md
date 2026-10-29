@@ -42,13 +42,13 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Implement `loop.py`: send `system`, `tools` and `messages` through an injected client's `messages.stream(...)`; append the full `response.content`; dispatch every `tool_use` to a handler; return all results in one user message; stop on a turn without tool use. Enforce the turn and token limits and stop on `max_tokens` or context-window stop reasons. Tool handlers are injected, so this task uses a fake tool. Fixtures are built from SDK `Message` types in tests until Task 6 records real ones. Check request parameters against the `claude-api` skill first.
 
 **Acceptance criteria:**
-- [ ] History is append-only and every `tool_use` gets a matching `tool_result` in a single user message; a handler error yields `is_error: true`
-- [ ] `system` and `tools` are byte-identical across all requests in a run
-- [ ] Turn limit, token limit and `max_tokens` each stop the loop with a distinct, named stop reason
+- [x] History is append-only and every `tool_use` gets a matching `tool_result` in a single user message; a handler error yields `is_error: true`
+- [x] `system` and `tools` are byte-identical across all requests in a run
+- [x] Turn limit, token limit and `max_tokens` each stop the loop with a distinct, named stop reason
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_loop.py`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest tests/unit/test_loop.py`
+- [x] All checks pass
 
 **Dependencies:** Task 1
 

@@ -56,6 +56,7 @@ coding-agent --version
 - `system` and `tools` are byte-identical on every turn (prompt caching). The task, workspace path and anything time-varying go in the first user message.
 - All `tool_result` blocks for a turn go back in one user message; a failed tool returns `is_error: true` with a short message.
 - The loop ends when the model stops without requesting a tool, or when a limit is hit. A response cut off by `max_tokens` or a context-window limit ends the run with exit code `3` and a clear message.
+- Server-side fallback is on (`fallbacks: "default"`): if a safety classifier declines a request, the API retries it on a fallback model it chooses. If the whole chain declines, the run ends with exit code `1` and says the request was refused.
 - No forced `tool_choice`, prefill, sampling parameters or `budget_tokens`.
 - Exact parameter names and tool versions are verified against current Claude API docs at implementation time (`source-driven-development`, `claude-api` skill).
 

@@ -33,6 +33,7 @@ python-preference = "only-managed"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not docker and not live'"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "docker: needs a running Docker daemon, no API calls",
     "live: calls the real Anthropic API (costs money)",

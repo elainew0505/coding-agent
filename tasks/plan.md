@@ -23,7 +23,7 @@ Each of these gets a short record in `docs/decisions/` in the task that implemen
 ### Phase 1: Prove the risky parts
 
 - [x] Task 1: Project scaffold and `coding-agent --version` (S)
-- [ ] Task 2: Agent loop against a fake client (M)
+- [x] Task 2: Agent loop against a fake client (M)
 - [ ] Task 3: Sandbox container lifecycle with locked-down flags (M)
 - [ ] Task 4: Persistent bash session and the bash tool (M)
 
