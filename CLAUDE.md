@@ -71,5 +71,3 @@ No separate architecture doc: the spec, decision records and this file cover it.
 
 Project skills live in `.claude/skills/` (from addyosmani/agent-skills, MIT; edited locally):
 spec-driven-development, planning-and-task-breakdown, incremental-implementation, test-driven-development, git-workflow-and-versioning, security-and-hardening, source-driven-development, context-engineering.
-
-Also `beginner-friendly-code` (local): the repo owner is learning, so write simple code and explain it in plain language, including every shell command. Use it for all code work.

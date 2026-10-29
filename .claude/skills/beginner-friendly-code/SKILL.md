@@ -1,84 +1,72 @@
 ---
 name: beginner-friendly-code
-description: Writes simple, readable code and explains it in plain language for a learner. Use whenever writing or changing code, shell commands, Docker setup, or config in this repo, and whenever the user asks "what does this do", "explain", or "I don't understand". The repo owner is still learning bash, Docker, async Python and the Anthropic API, so default to this skill for all code work.
+description: Writes a separate, simplified learning version of existing project code in learn/, with plain-language explanations. Only run when the user invokes it with /beginner-friendly-code.
+disable-model-invocation: true
+argument-hint: "[file, function, or concept to explain]"
 ---
 
 # Beginner-Friendly Code
 
-## Overview
+The user wants to understand: $ARGUMENTS
 
-The person who owns this repo is learning. Code they can't read is code they can't review, debug or trust. So the goal is not the shortest or cleverest code: it is code a beginner can follow line by line, plus a plain-language explanation of anything new.
+## What this skill does — and doesn't
 
-Simple never means unsafe. The safety rules in `CLAUDE.md` (Docker sandbox, workspace path checks, never logging the API key) still apply in full. If a safety check makes code longer, keep the check and explain why it is there.
+The project code is written to normal industry standards and **stays that way**. This skill never edits it. Instead it writes a separate, simplified version in `learn/` that teaches the same idea, so the user can study it, run it, and then go back and read the real code with understanding.
 
-## When to Use
+If `$ARGUMENTS` is empty, ask which file, function or concept they want explained.
 
-- Writing any new code, test, shell command, Dockerfile or config file
-- Changing existing code
-- The user asks what something means or does
-- Introducing a concept, library or tool for the first time in the conversation
+## Steps
 
-## Writing the Code
+1. **Read the real code** the user named (or the code that uses the concept they named). Identify the ideas they are probably missing (e.g. bash, subprocess, Docker, `async`/`await`, context managers, the Anthropic tool-use loop).
+2. **Create a folder** `learn/<short-topic-name>/` (e.g. `learn/sandbox-run-command/`). Don't overwrite an existing one; add a suffix instead.
+3. **Write a simplified script** there (e.g. `simple.py`, or `simple.sh` for bash) that does the same core job in the plainest way. Rules below.
+4. **Write `README.md`** in the same folder explaining it. Format below.
+5. **Run the script** if it's safe to (no network, no API calls, nothing outside the folder) and confirm the output matches what the README says.
+6. **Reply in chat** with a short summary and the path to the folder.
 
-**Prefer the plain version.**
+## Writing the simplified script
 
-| Instead of | Write |
-|---|---|
-| A nested comprehension or long one-liner | A normal `for` loop with clear steps |
-| Chained calls `a(b(c(x)))` | One step per line, each stored in a well-named variable |
-| Short names `p`, `r`, `cfg` | Full names `path`, `response`, `config` |
-| Clever tricks (walrus `:=`, `lambda` chains, `functools.reduce`) | Ordinary `if`/`for`/function code |
-| Several new ideas in one function | Small functions that each do one thing |
-| Piped bash one-liners `a \| b \| c` | Separate commands, or Python, with a comment per step |
+- One file, top to bottom, no imports from the project's `src/`. It must run on its own.
+- Plain constructs: normal `for` loops and `if`s, no comprehensions, lambdas, walrus `:=`, or chained one-liners.
+- Full variable names (`response`, not `r`). One step per line.
+- A comment on almost every line or block, saying **what** it does in plain words.
+- Hard-coded example values instead of config or CLI parsing, so it's obvious what goes in.
+- Leave out what isn't the core idea (retries, logging, extra edge cases) — but say in the README what was left out and why the real code has it.
+- Keep it short: ideally under ~60 lines. Split into several numbered scripts (`01_...py`, `02_...py`) if one idea builds on another.
+- Safe to run: no real API calls (fake the response with a hard-coded dict), never print secrets, don't touch files outside `learn/`. Commands that need Docker must say so at the top.
 
-**Keep functions short** — aim for something that fits on one screen. Give each a one-line docstring saying what it does in plain words.
+## README.md format
 
-**Use type hints** (the project requires them for `pyright`), and when one is unusual, say what it means in a comment, e.g. `# str | None means "a string, or nothing"`.
+```markdown
+# <Topic>
 
-**Comment the why, and the what when it's new.** Normally comments only explain why. For this user, also add a short "what" comment the first time a concept appears in a file (e.g. the first `async def`, the first `subprocess` call, the first `with` block). Don't repeat it on every later use.
+**Real code:** `path/to/file.py` → `function_name`
+**In one sentence:** what this does and why the project needs it.
 
-**Add one piece at a time.** Prefer several small changes the user can follow over one large change. Follow `incremental-implementation`.
+## New concepts
+- **<term>** — short definition, plus an everyday analogy where it helps.
 
-## Explaining the Code
+## Walkthrough
+Go through simple.py in order: quote a line or block, then explain it.
+Use concrete values ("if path is ../secret.txt, this check rejects it because ...").
 
-After writing or changing code, explain it in the chat reply (not in a separate file):
+## Shell commands
+For every command: break it into parts, explain each flag, and say
+whether it only reads or changes something / costs money.
 
-1. **One-sentence summary** — what this code does and why we need it.
-2. **Walkthrough** — go through the code in order, in plain language. Quote the line or block, then say what it does.
-3. **New concepts** — for each term the user may not know (e.g. `bash`, `stdin`, exit code, container, `async`/`await`, context manager, environment variable, JSON, API), give a short definition and an everyday analogy where it helps.
-4. **How to try it** — the exact command to run, and what the user should expect to see.
+## Run it
+The exact command and the output to expect.
 
-Keep explanations short and concrete. Use examples with real values ("if `path` is `../secret.txt`, this check rejects it because ...") rather than abstract descriptions.
+## From simple to real
+How the real code differs (extra checks, types, async, error handling)
+and why each difference matters. Point at the lines in the real file.
 
-### Shell commands get extra care
+## Try this
+One or two small changes the user can make to test their understanding.
+```
 
-The user is new to bash. For every command you ask them to run, or that the code runs:
+## Rules
 
-- Break it into parts and say what each part does (e.g. `uv run pytest -m live` → `uv run` = run inside this project's Python environment; `pytest` = the test runner; `-m live` = only tests marked "live").
-- Say whether it changes anything (installs, deletes, costs money by calling the API) or only reads.
-- Explain flags rather than assuming they are known.
-
-### Explaining existing code
-
-When the user asks about code that already exists, explain it the same way: summary, walkthrough, new concepts. Don't rewrite it unless they ask.
-
-## Checking Understanding
-
-At the end of a larger change, offer — in one line — to go deeper on any part, or suggest one small thing the user could change themselves to test their understanding (e.g. "try changing the timeout to 5 and run the test again"). Don't quiz them unprompted.
-
-## Red Flags
-
-- A line that needs a comment to decode *what* it does, when a plainer version exists
-- A concept used without being explained the first time
-- A bash command given without saying what it does
-- "Simplifying" by removing a safety check, a test, or error handling
-- A large change delivered at once with no walkthrough
-
-## Verification
-
-Before finishing:
-
-- [ ] Could a beginner read each function top to bottom without jumping around?
-- [ ] Every new concept and every shell command is explained in plain words
-- [ ] The explanation includes how to run or test it
-- [ ] Safety rules and tests are intact; `ruff` and `pyright` still pass
+- Never edit files outside `learn/`.
+- Never present the simplified version as a replacement for the real code, and never import from `learn/` in project code or tests.
+- Safety checks in the real code are explained, not hand-waved: if the simple version skips one, the "From simple to real" section says what it protects against.
