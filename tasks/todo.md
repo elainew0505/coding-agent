@@ -45,6 +45,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 - [ ] History is append-only and every `tool_use` gets a matching `tool_result` in a single user message; a handler error yields `is_error: true`
 - [ ] `system` and `tools` are byte-identical across all requests in a run
 - [ ] Turn limit, token limit and `max_tokens` each stop the loop with a distinct, named stop reason
+- [ ] Several tool calls in one response run one at a time in issue order; their results come back in that order, and a failing call doesn't stop the later ones (spec criterion 14)
 
 **Verification:**
 - [ ] Tests pass: `uv run pytest tests/unit/test_loop.py`
@@ -81,7 +82,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Files likely touched:**
 - `src/coding_agent/sandbox.py`
 - `tests/docker/test_sandbox.py`, `tests/unit/test_sandbox_args.py`
-- `docs/decisions/0001-docker-cli-not-sdk.md`
+- `docs/decisions/0002-docker-cli-not-sdk.md`
 
 **Estimated scope:** Medium
 
@@ -106,7 +107,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 - `src/coding_agent/sandbox.py`
 - `src/coding_agent/tools/bash.py`
 - `tests/docker/test_bash.py`, `tests/unit/test_truncate.py`
-- `docs/decisions/0002-persistent-bash-session.md`
+- `docs/decisions/0003-persistent-bash-session.md`
 
 **Estimated scope:** Medium
 
@@ -129,6 +130,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 - [ ] Precedence flags > env > user config file > defaults is tested, and a config file inside the workspace is ignored
 - [ ] Not a git repo, missing key, or Docker unavailable each exit `2` with a one-line message; a dirty tree warns and continues
 - [ ] The key never appears in `repr`, logs or error output
+- [ ] The dirty-tree check uses the hardened `git status` from spec § Host-side git, in one shared helper that Task 6 reuses; a temp repo with `core.fsmonitor` set to a script proves the script never runs (spec criterion 13)
 
 **Verification:**
 - [ ] Tests pass: `uv run pytest tests/unit/test_config.py tests/unit/test_cli.py`
@@ -152,6 +154,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Acceptance criteria:**
 - [ ] Live: `coding-agent run "create hello.py that prints hello" --workspace <temp repo>` creates the file, exits `0`, and leaves it uncommitted (spec criterion 1)
 - [ ] Hitting the turn limit exits `3` and names the limit
+- [ ] The final `git diff --stat` goes through the hardened helper; with `diff.external` and a textconv driver set to a script, the script never runs (spec criterion 13)
 - [ ] `tests/fixtures/` contains recorded responses and a unit test proves none match `sk-ant-|x-api-key|authorization`
 
 **Verification:**
@@ -187,6 +190,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 - [ ] `..`, absolute paths outside the workspace, symlinks pointing outside, and `.git/` paths each return `is_error: true`
 - [ ] `view` shows numbered lines and truncates large files; `create` writes the exact content, including content with quotes and `$`
 - [ ] Nothing outside the workspace changes in any abuse test
+- [ ] The `.git/` rejection is also unit-tested against a fake sandbox with no read-only mount, so the path check is proven on its own (Task 3 proves the mount on its own)
 
 **Verification:**
 - [ ] Tests pass: `uv run pytest -m docker tests/docker/test_editor.py` and `uv run pytest tests/unit/test_editor.py`
@@ -198,7 +202,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 - `src/coding_agent/tools/editor.py`
 - `src/coding_agent/sandbox.py` (read/write helpers)
 - `tests/docker/test_editor.py`, `tests/unit/test_editor.py`
-- `docs/decisions/0003-path-checks-inside-container.md`
+- `docs/decisions/0004-path-checks-inside-container.md`
 
 **Estimated scope:** Medium
 
@@ -284,7 +288,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 ## Task 11: Success-criteria pass and v1 docs
 
-**Description:** Map each of the spec's 12 success criteria to the test that proves it, fill any gaps, and finish the docs: README security model section, `CHANGELOG.md` entry for 0.1.0, spec status updated.
+**Description:** Map each of the spec's 14 success criteria to the test that proves it, fill any gaps, and finish the docs: README security model section, `CHANGELOG.md` entry for 0.1.0, spec status updated.
 
 **Acceptance criteria:**
 - [ ] Every spec success criterion has a named passing test (the list lives in the PR description)
@@ -306,6 +310,6 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 ---
 
 ## Checkpoint 4: v1 complete
-- [ ] All 12 spec success criteria verified
+- [ ] All 14 spec success criteria verified
 - [ ] Definition of Done holds
 - [ ] Ready for review
