@@ -45,7 +45,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 - [x] History is append-only and every `tool_use` gets a matching `tool_result` in a single user message; a handler error yields `is_error: true`
 - [x] `system` and `tools` are byte-identical across all requests in a run
 - [x] Turn limit, token limit and `max_tokens` each stop the loop with a distinct, named stop reason
-- [ ] Several tool calls in one response run one at a time in issue order; their results come back in that order, and a failing call doesn't stop the later ones (spec criterion 14)
+- [x] Several tool calls in one response run one at a time in issue order; their results come back in that order, and a failing call doesn't stop the later ones (spec criterion 14)
 
 **Verification:**
 - [x] Tests pass: `uv run pytest tests/unit/test_loop.py`

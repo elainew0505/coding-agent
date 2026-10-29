@@ -95,6 +95,36 @@ def test_a_failed_tool_returns_is_error():
     assert result_block["content"] == "exit code 1"
 
 
+def test_several_calls_run_in_issue_order_and_a_failure_does_not_stop_the_rest():
+    calls: list[str] = []
+
+    def tool(name: str, tool_input: dict[str, Any]) -> ToolResult:
+        calls.append(tool_input["command"])
+        if tool_input["command"] == "false":
+            return ToolResult.error("exit code 1")
+        return ToolResult.ok(tool_input["command"])
+
+    client = FakeClient(
+        message(
+            tool_use("tu_1", "bash", {"command": "false"}),
+            tool_use("tu_2", "bash", {"command": "ls"}),
+            tool_use("tu_3", "bash", {"command": "pwd"}),
+            stop_reason="tool_use",
+        ),
+        message(text("Done.")),
+    )
+
+    run(client, tool)
+
+    results = client.requests[1]["messages"][-1]["content"]
+    assert calls == ["false", "ls", "pwd"]
+    assert [(r["tool_use_id"], r["is_error"]) for r in results] == [
+        ("tu_1", True),
+        ("tu_2", False),
+        ("tu_3", False),
+    ]
+
+
 def test_a_tool_that_raises_becomes_an_error_result_and_the_loop_continues():
     def broken_tool(name: str, tool_input: dict[str, Any]) -> ToolResult:
         raise RuntimeError("sandbox went away")
