@@ -17,7 +17,7 @@ Status: building v1. What to build is in [SPEC.md](SPEC.md); the next unchecked 
 ## Commands
 
 ```bash
-uv sync                      # install deps (uses a uv-managed Python, never conda/system)
+uv sync                      # install deps (uses a uv-managed Python)
 uv run coding-agent --help   # run the CLI
 uv run pytest                # unit tests (no network, no Docker)
 uv run pytest -m docker      # sandbox tests (real Docker, no API)
