@@ -21,7 +21,7 @@ If `$ARGUMENTS` is empty, ask which file, function or concept they want explaine
 2. **Create a folder** `learn/<short-topic-name>/` (e.g. `learn/sandbox-run-command/`). Don't overwrite an existing one; add a suffix instead.
 3. **Write a simplified script** there (e.g. `simple.py`, or `simple.sh` for bash) that does the same core job in the plainest way. Rules below.
 4. **Write `README.md`** in the same folder explaining it. Format below.
-5. **Run the script** if it's safe to (no network, no API calls, nothing outside the folder) and confirm the output matches what the README says.
+5. **Don't run or test the scripts** unless the user asks you to. Writing them is the job; the user runs them to learn. Never start services (e.g. the Docker daemon), pull images, or install anything for this skill without being asked. In the README's "Run it" section, describe the expected output rather than pasting output from a run.
 6. **Reply in chat** with a short summary and the path to the folder.
 
 ## Writing the simplified script
