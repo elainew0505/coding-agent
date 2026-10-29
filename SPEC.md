@@ -23,7 +23,7 @@ A command-line coding agent. You give it a task and a git repository; it calls C
 | Topic | Decision |
 |---|---|
 | Workspace | The target folder is mounted read-write and edited directly. It must be a git repo. |
-| Approvals | Fully autonomous. The sandbox is the safety boundary; no per-command prompts. |
+| Approvals | Fully autonomous. The sandbox is the safety boundary; no per-command prompts. See [0001](docs/decisions/0001-sandbox-instead-of-approvals.md). |
 | Network | Off by default; `--allow-network` enables it for one run. |
 | Git | The agent never commits. `.git/` is mounted read-only in the sandbox, so no commit can be written. |
 | Where tools run | Both tools (bash and file edits) execute inside the container. Nothing model-issued runs on the host. |
@@ -55,6 +55,7 @@ coding-agent --version
 - History is append-only; each turn appends the full `response.content`.
 - `system` and `tools` are byte-identical on every turn (prompt caching). The task, workspace path and anything time-varying go in the first user message.
 - All `tool_result` blocks for a turn go back in one user message; a failed tool returns `is_error: true` with a short message.
+- Tool calls in one response run one at a time, in the order the model issued them, and their `tool_result` blocks come back in that same order. (The bash session is a single shell, so it can't run two commands at once anyway.) A failed call doesn't stop the later ones.
 - The loop ends when the model stops without requesting a tool, or when a limit is hit. A response cut off by `max_tokens` or a context-window limit ends the run with exit code `3` and a clear message.
 - Server-side fallback is on (`fallbacks: "default"`): if a safety classifier declines a request, the API retries it on a fallback model it chooses. If the whole chain declines, the run ends with exit code `1` and says the request was refused.
 - No forced `tool_choice`, prefill, sampling parameters or `budget_tokens`.
@@ -78,6 +79,17 @@ One container per run, created at start and removed at the end (including on err
 - Memory, CPU and pid limits set.
 - Mounts: the workspace read-write at `/workspace`, its `.git/` read-only on top. Nothing else from the host.
 - Host environment is not passed through. `ANTHROPIC_API_KEY` never enters the container.
+
+### Host-side git
+
+Our code runs git on the host twice: `git status` for the dirty-tree warning before the run, and `git diff --stat` after it. This is the only place host code reads files the agent may have written. Git config can name programs that `status` and `diff` run (`core.fsmonitor`, `diff.external`, textconv drivers), and the agent can write `.gitattributes`, which selects diff drivers. So host-side git always runs as:
+
+```
+git -c core.fsmonitor=false status --porcelain
+git -c core.fsmonitor=false diff --stat --no-ext-diff --no-textconv
+```
+
+with output captured (no pager). Known residual: a clean/smudge filter defined in the user's own git config can still be selected by an agent-written `.gitattributes`; we don't override the user's configured filters.
 
 ### Limits (defaults, all configurable)
 
@@ -173,6 +185,8 @@ Patterns in [.claude/references/testing-patterns.md](.claude/references/testing-
 | Sandbox | `docker` | Real container: path escapes rejected, timeout kills, output truncated, network off/on, `.git` read-only, key absent from container env, container removed on exit and on Ctrl-C |
 | End-to-end | `live` | A few real tasks against the API on a temp git repo |
 
+Where two mechanisms guard the same thing, each is tested without the other, so a regression in one can't hide behind the other. Writes into `.git/` are the main case: the editor's path check is tested against a fake sandbox with no read-only mount, and the read-only mount is tested by writing through bash, which has no path check.
+
 `uv run pytest` runs only unit tests (`addopts = "-m 'not docker and not live'"`). No coverage percentage target; every tool handler, safety check and exit path must have a test. Abuse cases (`..`, absolute paths, symlinks, huge output, `sleep infinity`, `git commit`) are tests, not comments.
 
 ## Boundaries
@@ -181,7 +195,7 @@ For anyone (human or agent) building this project:
 
 - **Always:** write the failing test first; run `pytest`, `ruff` and `pyright` before committing; keep `system` and `tools` constant across turns; validate tool inputs; update the spec before changing a decision recorded here.
 - **Ask first:** adding a dependency; changing any sandbox flag, mount or network default; adding a tool; changing a limit's default; changing the CLI interface or exit codes.
-- **Never:** run model-issued commands on the host; pass `ANTHROPIC_API_KEY` or host env into the container; read config from the workspace; commit fixtures containing keys or auth headers; disable or skip a failing safety test.
+- **Never:** run model-issued commands on the host; run host-side git without the flags in [§ Host-side git](#host-side-git); pass `ANTHROPIC_API_KEY` or host env into the container; read config from the workspace; commit fixtures containing keys or auth headers; disable or skip a failing safety test.
 
 ## Success Criteria
 
@@ -199,6 +213,8 @@ v1 is done when all of these hold:
 10. Ctrl-C exits `130` and no container from the run remains. (`docker`)
 11. `system` and `tools` in every request of a run are byte-identical. (unit)
 12. `uv run pytest`, `uv run pyright` and `uv run ruff check .` all pass; `grep -rE 'sk-ant-|x-api-key|authorization' tests/fixtures` finds nothing.
+13. In a temp repo whose config sets `core.fsmonitor`, `diff.external` and a textconv driver to a script, the dirty-tree check and the final diff stat never run that script. (unit, real `git`, no Docker)
+14. A response with several tool calls, one of which fails, gets one `tool_result` per call in the order issued, with only the failed one marked `is_error`. (unit)
 
 ## Open Questions
 

@@ -1,4 +1,4 @@
-# 0001: Drive Docker through the `docker` CLI, not the Python SDK
+# 0002: Drive Docker through the `docker` CLI, not the Python SDK
 
 Status: accepted, 2026-10-29
 

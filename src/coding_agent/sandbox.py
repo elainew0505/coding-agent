@@ -1,7 +1,7 @@
 """The Docker sandbox: one locked-down container per run.
 
 Docker is driven through the `docker` CLI with argv lists (never a shell
-string), see docs/decisions/0001-docker-cli-not-sdk.md. Every model-issued
+string), see docs/decisions/0002-docker-cli-not-sdk.md. Every model-issued
 command runs in here, never on the host.
 """
 

@@ -8,7 +8,7 @@ Build the one-shot CLI from the spec in thin slices. The two riskiest pieces, th
 
 ## Architecture Decisions
 
-Each of these gets a short record in `docs/decisions/` in the task that implements it.
+Each of these gets a short record in `docs/decisions/` in the task that implements it. [0001](../docs/decisions/0001-sandbox-instead-of-approvals.md) (the sandbox instead of per-command approvals) was written with the spec.
 
 - **Docker through the `docker` CLI (argv lists via `subprocess`), not the Docker SDK for Python.** One fewer dependency, and the commands are easy to read and to copy into a terminal when debugging. (Task 3)
 - **One long-lived container per run** started with `sleep infinity` as PID 1; tools run through `docker exec`. (Task 3)
@@ -17,6 +17,8 @@ Each of these gets a short record in `docs/decisions/` in the task that implemen
 - **Path checks are for correctness, not the host boundary.** Since file operations run inside the container, a symlink can only reach container files, which bash can already modify. The host boundary is the container itself: only the workspace is mounted, with `.git/` read-only. The workspace path check keeps edits where they belong and gives the model a clear error. (Task 7)
 - **The model client is injected** (`messages.stream(...)` interface), so unit tests replay fixtures through a fake client. (Task 2)
 - **Tools are declared only once implemented**: bash from Task 6, the editor from Task 8. `system` and `tools` stay constant within a run.
+- **Tool calls run one at a time, in issue order**, and results return in that order. Parallel read-only calls would save little in a capped 50-turn run and would complicate the single shell session. (Task 2)
+- **Host-side git goes through one hardened helper** (spec § Host-side git), so neither the dirty-tree check nor the final diff stat can run a program named in repo config or selected by an agent-written `.gitattributes`. (Tasks 5 and 6)
 
 ## Task List
 
@@ -62,7 +64,7 @@ Each of these gets a short record in `docs/decisions/` in the task that implemen
 
 ### Checkpoint 4: v1 complete
 
-- [ ] All 12 spec success criteria verified, each by a named test
+- [ ] All 14 spec success criteria verified, each by a named test
 - [ ] Definition of Done (`.claude/references/definition-of-done.md`) holds
 - [ ] Ready for review
 
@@ -91,6 +93,8 @@ Tasks 2, 3 and 5 depend only on Task 1 and could run in parallel. Tasks 7, 9 and
 | Claude API parameters differ from what CLAUDE.md assumes (effort, tool versions, streaming helpers) | Medium | Check with the `claude-api` skill and current docs at the start of Tasks 2 and 6 |
 | Live tests cost money and are slow | Low | Few of them, opt-in with `-m live`; unit tests replay recorded fixtures |
 | A recorded fixture leaks an API key or header | Low | Save only `response.model_dump_json()`; a unit test greps `tests/fixtures/` for key patterns |
+| Host-side `git status`/`git diff` runs a program named in repo config or chosen by an agent-written `.gitattributes` | Medium | Hardened helper (spec § Host-side git), tested with a temp repo whose config points at a script |
+| Two guards on the same thing (editor path check, read-only `.git` mount) hide each other's regressions | Low | Each is tested with the other absent (spec § Testing Strategy) |
 
 ## Open Questions
 

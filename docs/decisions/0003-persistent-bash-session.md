@@ -1,4 +1,4 @@
-# 0002: A persistent bash session over one `docker exec -i` process
+# 0003: A persistent bash session over one `docker exec -i` process
 
 Status: accepted, 2026-10-29
 
