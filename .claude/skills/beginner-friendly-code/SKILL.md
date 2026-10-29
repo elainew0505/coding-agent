@@ -9,6 +9,17 @@ argument-hint: "[file, function, or concept to explain]"
 
 The user wants to understand: $ARGUMENTS
 
+## Background and audience
+
+This repo is a coding agent: a CLI that calls Claude in a tool-use loop and runs bash commands and file edits inside a Docker sandbox (see `SPEC.md`). The owner is building it to learn, and uses this skill to fill specific knowledge gaps.
+
+**Audience level: between a data scientist and a software developer.**
+
+- **Already knows — don't explain:** Python syntax, functions, classes, dicts/lists, comprehensions, imports, virtual environments, pip/`uv` basics, running scripts and notebooks, calling an HTTP/JSON API, pandas-style data work, basic git (commit, branch, push).
+- **Likely gaps — explain these well:** how the OS runs processes (subprocess, stdin/stdout/stderr, exit codes, signals, killing a process), bash beyond `cd`/`ls` (pipes, redirection, `$?`, quoting), Docker (images vs containers, mounts, users, capabilities, network isolation), concurrency (threads, queues, `async`/`await`), timeouts, security thinking (untrusted input, path escapes, secrets), testing with fakes/mocks, typing and pydantic, and the Anthropic tool-use protocol.
+
+Pitch explanations at that level: skip the basics, go straight to the idea that's new, and explain the "why" an experienced developer would take for granted.
+
 ## What this skill does — and doesn't
 
 The project code is written to normal industry standards and **stays that way**. This skill never edits it. Instead it writes a separate, simplified version in `learn/` that teaches the same idea, so the user can study it, run it, and then go back and read the real code with understanding.
@@ -17,7 +28,7 @@ If `$ARGUMENTS` is empty, ask which file, function or concept they want explaine
 
 ## Steps
 
-1. **Read the real code** the user named (or the code that uses the concept they named). Identify the ideas they are probably missing (e.g. bash, subprocess, Docker, `async`/`await`, context managers, the Anthropic tool-use loop).
+1. **Read the real code** the user named (or the code that uses the concept they named). If it isn't written yet, work from its section in `SPEC.md` and say so in the README. Identify the ideas from the "likely gaps" list above that it depends on.
 2. **Create a folder** `learn/<short-topic-name>/` (e.g. `learn/sandbox-run-command/`). Don't overwrite an existing one; add a suffix instead.
 3. **Write a simplified script** there (e.g. `simple.py`, or `simple.sh` for bash) that does the same core job in the plainest way. Rules below.
 4. **Write `README.md`** in the same folder explaining it. Format below.
@@ -27,13 +38,13 @@ If `$ARGUMENTS` is empty, ask which file, function or concept they want explaine
 ## Writing the simplified script
 
 - One file, top to bottom, no imports from the project's `src/`. It must run on its own.
-- Plain constructs: normal `for` loops and `if`s, no comprehensions, lambdas, walrus `:=`, or chained one-liners.
-- Full variable names (`response`, not `r`). One step per line.
-- A comment on almost every line or block, saying **what** it does in plain words.
+- Plain, ordinary Python: no clever tricks or dense one-liners, but normal idioms the audience knows (comprehensions, f-strings, `with`) are fine.
+- Full variable names (`response`, not `r`). One step per line where the step is the new idea.
+- Comment the lines that carry a new concept, saying what they do and why. Don't comment plain Python.
 - Hard-coded example values instead of config or CLI parsing, so it's obvious what goes in.
 - Leave out what isn't the core idea (retries, logging, extra edge cases) — but say in the README what was left out and why the real code has it.
 - Keep it short: ideally under ~60 lines. Split into several numbered scripts (`01_...py`, `02_...py`) if one idea builds on another.
-- Safe to run: no real API calls (fake the response with a hard-coded dict), never print secrets, don't touch files outside `learn/`. Commands that need Docker must say so at the top.
+- Safe to run: no real API calls (fake the response with a hard-coded dict), never print secrets, don't touch files outside `learn/`. Only hard-coded example commands may run on the host; anything standing in for model-issued commands goes in Docker. Scripts that need Docker must say so at the top.
 
 ## README.md format
 
@@ -44,7 +55,8 @@ If `$ARGUMENTS` is empty, ask which file, function or concept they want explaine
 **In one sentence:** what this does and why the project needs it.
 
 ## New concepts
-- **<term>** — short definition, plus an everyday analogy where it helps.
+- **<term>** — short definition, plus an analogy where it helps.
+  Only terms from the "likely gaps" list; don't define things the audience already knows.
 
 ## Walkthrough
 Go through simple.py in order: quote a line or block, then explain it.
