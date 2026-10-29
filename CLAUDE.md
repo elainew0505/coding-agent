@@ -49,6 +49,24 @@ uv run pyright
 - Unit tests never hit the network: inject the model client and replay recorded responses from `tests/fixtures/`.
 - See `.claude/references/testing-patterns.md` for patterns.
 
+## Documentation
+
+Update docs in the same commit as the behavior they describe. A PR that changes behavior without touching a doc is a review red flag.
+
+| Doc | Holds |
+|---|---|
+| `SPEC.md` (or `SPEC-<module>.md`) | What we're building, scope, boundaries, success criteria. Update it before the code when requirements change |
+| `tasks/plan.md`, `tasks/todo.md` | Build order, risks, open questions, task checklist; where a new session picks up |
+| `docs/decisions/NNNN-title.md` | One record per hard-to-reverse choice: context, options, decision, consequences |
+| `CLAUDE.md` | Commands, conventions, safety rules. Keep it short |
+| `README.md` | Install, configure, run, and the security model in plain terms |
+| `CHANGELOG.md` | User-facing changes per version, once releases are tagged |
+| Commits / PRs | Why each change was made; PRs link the spec section they implement |
+| Docstrings / comments | Public functions; the why behind non-obvious code, especially security checks |
+| `tests/` | Expected behavior, including abuse cases |
+
+No separate architecture doc: the spec, decision records and this file cover it.
+
 ## Skills
 
 Project skills live in `.claude/skills/` (from addyosmani/agent-skills, MIT; edited locally):
