@@ -33,5 +33,5 @@ printf '\n%s %d\n' <random token> $?
 
 - Persistence is exactly bash's own; nothing is emulated.
 - A timeout costs the model its shell state (directory, variables, background servers). The error message says so, so it can redo the setup.
-- Output a background job prints after a command finishes is discarded rather than attached to the next command.
+- Output a background job prints after its command's marker is not discarded: it stays in the pipe and appears at the start of the next command's output.
 - The dropped-bytes count is reported as characters; they differ only for non-ASCII output larger than 2 MB.
