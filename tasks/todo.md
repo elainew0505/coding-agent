@@ -17,14 +17,14 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Create the `uv` project with the stack from `CLAUDE.md`, a `src/coding_agent` package, a typer app exposing `--version`, pytest configured with `docker` and `live` markers excluded by default, and ruff/pyright configuration.
 
 **Acceptance criteria:**
-- [ ] `uv sync` installs from a committed `uv.lock`
-- [ ] `uv run coding-agent --version` prints the package version
-- [ ] `uv run pytest` runs unit tests only (`addopts` excludes `docker` and `live`)
+- [x] `uv sync` installs from a committed `uv.lock`
+- [x] `uv run coding-agent --version` prints the package version
+- [x] `uv run pytest` runs unit tests only (`addopts` excludes `docker` and `live`)
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_cli.py`
-- [ ] All checks pass (pyright strict on `src/`)
-- [ ] Manual check: fresh clone, `uv sync`, `uv run coding-agent --version`
+- [x] Tests pass: `uv run pytest tests/unit/test_cli.py`
+- [x] All checks pass (pyright strict on `src/`)
+- [x] Manual check: fresh clone, `uv sync`, `uv run coding-agent --version`
 
 **Dependencies:** None
 

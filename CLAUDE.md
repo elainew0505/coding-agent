@@ -2,7 +2,7 @@
 
 A coding agent written in Python: a CLI that takes a task, calls Claude through the Anthropic API in a tool-use loop, and edits files and runs commands in a sandboxed workspace.
 
-Status: no code yet. Start from a spec (`spec-driven-development` skill) before writing any.
+Status: building v1. What to build is in [SPEC.md](SPEC.md); the next unchecked task is in [tasks/todo.md](tasks/todo.md).
 
 ## Stack
 
@@ -16,11 +16,11 @@ Status: no code yet. Start from a spec (`spec-driven-development` skill) before 
 
 ## Commands
 
-Once `pyproject.toml` exists:
-
 ```bash
-uv sync                      # install deps
-uv run pytest                # unit tests (no network)
+uv sync                      # install deps (uses a uv-managed Python, never conda/system)
+uv run coding-agent --help   # run the CLI
+uv run pytest                # unit tests (no network, no Docker)
+uv run pytest -m docker      # sandbox tests (real Docker, no API)
 uv run pytest -m live        # tests that call the real API (cost money)
 uv run ruff check . && uv run ruff format .
 uv run pyright

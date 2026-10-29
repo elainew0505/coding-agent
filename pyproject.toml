@@ -1,0 +1,50 @@
+[project]
+name = "coding-agent"
+version = "0.1.0"
+description = "A command-line coding agent that runs Claude in a tool-use loop inside a Docker sandbox."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=2.3.0",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.2",
+    "rich>=15.0.0",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+coding-agent = "coding_agent.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.1,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+    "ruff>=0.17.3",
+]
+
+[tool.uv]
+python-preference = "only-managed"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not docker and not live'"
+markers = [
+    "docker: needs a running Docker daemon, no API calls",
+    "live: calls the real Anthropic API (costs money)",
+]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [".claude"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+strict = ["src"]
