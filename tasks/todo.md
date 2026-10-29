@@ -67,14 +67,14 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Implement `Sandbox` as a context manager that starts one container (`sleep infinity`) with the spec's flags (host uid:gid, `--cap-drop ALL`, `no-new-privileges`, `--network none` unless allowed, memory/CPU/pid limits, workspace mounted read-write at `/workspace` and its `.git/` read-only, no host env), runs one-off commands with a timeout, and always removes the container. Pin `python:3.12-slim` by digest. First verify the nested read-only `.git` mount on Docker Desktop. Write the decision record for using the Docker CLI.
 
 **Acceptance criteria:**
-- [ ] Network access fails by default and succeeds with networking allowed
-- [ ] Writing under `/workspace/.git` fails; writing elsewhere in `/workspace` succeeds and the file is owned by the host user
-- [ ] `env` in the container has no `ANTHROPIC_API_KEY`, and the container is gone after the context exits, including when the body raises
+- [x] Network access fails by default and succeeds with networking allowed
+- [x] Writing under `/workspace/.git` fails; writing elsewhere in `/workspace` succeeds and the file is owned by the host user
+- [x] `env` in the container has no `ANTHROPIC_API_KEY`, and the container is gone after the context exits, including when the body raises
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest -m docker tests/docker/test_sandbox.py`
-- [ ] Unit test for the exact `docker run` argv: `uv run pytest tests/unit/test_sandbox_args.py`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest -m docker tests/docker/test_sandbox.py`
+- [x] Unit test for the exact `docker run` argv: `uv run pytest tests/unit/test_sandbox_args.py`
+- [x] All checks pass
 
 **Dependencies:** Task 1
 

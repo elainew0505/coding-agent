@@ -24,7 +24,7 @@ Each of these gets a short record in `docs/decisions/` in the task that implemen
 
 - [x] Task 1: Project scaffold and `coding-agent --version` (S)
 - [x] Task 2: Agent loop against a fake client (M)
-- [ ] Task 3: Sandbox container lifecycle with locked-down flags (M)
+- [x] Task 3: Sandbox container lifecycle with locked-down flags (M)
 - [ ] Task 4: Persistent bash session and the bash tool (M)
 
 ### Checkpoint 1: Foundations
