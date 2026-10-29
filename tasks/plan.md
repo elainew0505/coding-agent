@@ -25,12 +25,12 @@ Each of these gets a short record in `docs/decisions/` in the task that implemen
 - [x] Task 1: Project scaffold and `coding-agent --version` (S)
 - [x] Task 2: Agent loop against a fake client (M)
 - [x] Task 3: Sandbox container lifecycle with locked-down flags (M)
-- [ ] Task 4: Persistent bash session and the bash tool (M)
+- [x] Task 4: Persistent bash session and the bash tool (M)
 
 ### Checkpoint 1: Foundations
 
-- [ ] `uv run pytest`, `uv run pytest -m docker`, `uv run pyright`, `uv run ruff check .` all pass
-- [ ] Loop and sandbox each work on their own
+- [x] `uv run pytest`, `uv run pytest -m docker`, `uv run pyright`, `uv run ruff check .` all pass
+- [x] Loop and sandbox each work on their own
 - [ ] Review with human before wiring them together
 
 ### Phase 2: Walking skeleton

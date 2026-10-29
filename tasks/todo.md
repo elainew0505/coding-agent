@@ -92,13 +92,13 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Add a persistent shell to `Sandbox` (one `docker exec -i ... bash` process; marker line with exit code after each command) and the bash tool handler: run a command, combine stdout/stderr, truncate head and tail with a note of how much was cut, report the exit code, support `restart`. On timeout, kill all container processes except PID 1, restart the shell, and return an error. Write the decision record for the session design.
 
 **Acceptance criteria:**
-- [ ] `cd` and exported variables persist across calls; `restart` resets them
-- [ ] `sleep infinity` returns a timeout error at the configured limit, and the next command works
-- [ ] Output larger than the limit is truncated with head, tail and a count of characters cut
+- [x] `cd` and exported variables persist across calls; `restart` resets them
+- [x] `sleep infinity` returns a timeout error at the configured limit, and the next command works
+- [x] Output larger than the limit is truncated with head, tail and a count of characters cut
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest -m docker tests/docker/test_bash.py` and `uv run pytest tests/unit/test_truncate.py`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest -m docker tests/docker/test_bash.py` and `uv run pytest tests/unit/test_truncate.py`
+- [x] All checks pass
 
 **Dependencies:** Task 3
 
@@ -113,8 +113,8 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 ---
 
 ## Checkpoint 1: Foundations
-- [ ] `uv run pytest`, `uv run pytest -m docker`, pyright and ruff all pass
-- [ ] Loop and sandbox each work on their own
+- [x] `uv run pytest`, `uv run pytest -m docker`, pyright and ruff all pass
+- [x] Loop and sandbox each work on their own
 - [ ] Review with human before wiring them together
 
 ---
