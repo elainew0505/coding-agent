@@ -100,6 +100,13 @@ def test_api_error_ends_the_task():
     assert run.calls == 1
 
 
+def test_model_call_failure_ends_the_task():
+    # e.g. no credentials: the SDK raises TypeError on the first call
+    run, _, _ = go(TypeError("Could not resolve authentication method"))
+    assert run.stop_reason == "model_error"
+    assert "authentication" in run.detail
+
+
 def test_ctrl_c_while_a_reply_streams_drops_it():
     run, _, _ = go(reply("ls"), KeyboardInterrupt())
     assert run.stop_reason == "interrupted"

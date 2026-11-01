@@ -60,7 +60,7 @@ The agent runs as root inside the container. That is fine here: with no mounts, 
 | L3 | `end_turn`: the task is done; print the final text and go to review. Any other `stop_reason` (e.g. `max_tokens`, `refusal`) ends the task with a message naming it, then goes to review, even if the reply contains a tool call, since it may be cut off |
 | L4 | Stop after 50 model calls, tell the user the cap was hit, and still go to review |
 | L5 | Context backstop: after each response, total its input tokens from `usage` (`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`; with caching on, `input_tokens` alone leaves out the cached part). Above 150,000, finish that response's tool calls, say the context is full, and go to review |
-| L6 | On an API error, rely on the SDK's built-in retries (`max_retries=3`, set explicitly; the SDK default is 2), then end the task with the error and go to review |
+| L6 | On an API error, rely on the SDK's built-in retries (`max_retries=3`, set explicitly; the SDK default is 2), then end the task with the error and go to review. The same if the model can't be called at all: with no credentials, the SDK raises `TypeError` on the first call rather than an API error |
 | L7 | Invalid tool input, timeouts and harness errors (e.g. `docker exec` failing) go back to the model as `is_error` tool results, never a crash. A non-zero exit code is a normal result, not an error: a failing test run is information, as in mini-swe-agent |
 | L8 | Ctrl+C stops the task: kill any running command (see below) and go to review. A reply that was still streaming is dropped |
 | L9 | Model name, effort, max tokens, call cap, context threshold and timeouts live in `config.py` |

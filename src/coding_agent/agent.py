@@ -1,17 +1,23 @@
 """
-agent.py - the agent loop (SPEC.md § Agent loop, L2-L9).
+agent.py - the agent loop, the review, and the trajectory.
 
-One task per run: send the history to the model, run the tool calls it asks
-for, append the results, repeat until it's done or a limit is hit. The
-history is a plain list that only grows; it is saved as the trajectory.
+  run_task          the loop (SPEC.md § Agent loop, L2-L9). One task per run: send
+                    the history to the model, run the tool calls it asks for,
+                    append the results, repeat until it's done or a limit is hit.
+  review            show the diff and apply or discard it (D2-D5)
+  write_trajectory  save the whole run as JSON (§ Trajectory)
 """
 
+import json
 from dataclasses import dataclass, field
+from datetime import datetime
 
 import anthropic
 
-from coding_agent.config import CONTEXT_THRESHOLD, MAX_CALLS
-from coding_agent.tools import ToolResult, run_command
+from coding_agent.config import CONTEXT_THRESHOLD, MAX_CALLS, MODEL
+from coding_agent.prompts import SYSTEM_PROMPT
+from coding_agent.sandbox import apply_patch
+from coding_agent.tools import TOOL, ToolResult, run_command
 
 PREVIEW_LINES = 5  # lines of each command's output shown to the user (§ Output)
 
@@ -50,6 +56,10 @@ def run_task(task, model, sandbox, out=print):
             return _stop(run, "interrupted", "Stopped by Ctrl+C.")
         except anthropic.APIError as e:  # L6: after the SDK's own retries
             return _stop(run, "api_error", f"API error: {e}")
+        except (
+            TypeError
+        ) as e:  # no credentials: the SDK raises this on the first call, not an APIError
+            return _stop(run, "model_error", f"Could not call the model: {e}")
 
         run.calls += 1
         run.usage["input_tokens"] += input_tokens(reply.usage)
@@ -106,3 +116,77 @@ def _stop(run, reason, detail=""):
     run.stop_reason = reason
     run.detail = detail
     return run
+
+
+# --- review and apply (D2-D5) ------------------------------------------------
+
+
+def review(diff, root, ask=None, out=print):
+    """Show the changes and apply them only if the user says so.
+
+    Returns "no changes", "applied", "discarded" or "saved" (apply failed).
+    Nothing is written to the repo before the answer (D4).
+    """
+    ask = ask or input
+    if diff.empty:  # D2
+        out("No file changes.")
+        return "no changes"
+    out(diff.stat)  # D3: summary first, then the full diff
+    out(diff.patch.decode(errors="replace"))
+    try:
+        answer = ask("[a]pply / [d]iscard? ").strip().lower()
+    except (KeyboardInterrupt, EOFError):  # D4: Ctrl+C or Ctrl+D means discard
+        answer = "d"
+    if answer not in ("a", "apply"):
+        out("Discarded. Your repo is unchanged.")
+        return "discarded"
+    ok, message = apply_patch(root, diff.patch)  # D5: checks first, then applies
+    if ok:
+        out("Applied to your repo.")
+        return "applied"
+    path = _agent_file(root, "patches", "patch")
+    path.write_bytes(diff.patch)  # D5: keep the work when it doesn't apply
+    out(f"Could not apply: {message}\nSaved the patch to {path}")
+    return "saved"
+
+
+# --- trajectory (§ Trajectory) -----------------------------------------------
+
+
+def write_trajectory(root, task, run, outcome):
+    """Save the run to .agent/trajectories/<timestamp>.json and return the path.
+
+    Holds the request settings, every message and the result. Never the API
+    key: it lives only inside the SDK client, which is not saved.
+    """
+    run = run or Run(messages=[], stop_reason="not started")
+    path = _agent_file(root, "trajectories", "json")
+    data = {
+        "task": task,
+        "model": MODEL,
+        "system": SYSTEM_PROMPT,
+        "tools": [TOOL],
+        "messages": run.messages,
+        "stop_reason": run.stop_reason,
+        "detail": run.detail,
+        "calls": run.calls,
+        "usage": run.usage,
+        "outcome": outcome,
+    }
+    path.write_text(json.dumps(data, indent=2, default=_jsonable))
+    return path
+
+
+def _jsonable(value):
+    """SDK reply blocks are pydantic models; store them as plain JSON."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", exclude_none=True)
+    raise TypeError(f"can't save {type(value).__name__} in a trajectory")
+
+
+def _agent_file(root, folder, suffix):
+    """A new timestamped file under <repo>/.agent/<folder>/."""
+    folder_path = root / ".agent" / folder
+    folder_path.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    return folder_path / f"{stamp}.{suffix}"

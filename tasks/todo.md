@@ -102,17 +102,17 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 ## Task 5: Review, apply, trajectory and the `coding-agent` command
 
-**Description:** Wire it together: `__main__.py` runs start → copy in → baseline → loop → review → apply or discard → trajectory → cleanup (`SPEC.md` § How a run works, D1–D6, § Output, § Trajectory). Remove the demo from `sandbox.py`.
+**Description:** Wire it together: `__main__.py` runs start → copy in → baseline → loop → review → apply or discard → trajectory → cleanup (`SPEC.md` § How a run works, D1–D6, § Output, § Trajectory). The demo in `sandbox.py` stays (user's choice): it's the free, by-hand way to try the sandbox.
 
 **Acceptance criteria:**
-- [ ] Empty diff says "no file changes"; otherwise the stat then the diff, then `[a]pply / [d]iscard`; Ctrl+C or Ctrl+D at the prompt discards
-- [ ] A failed `git apply --check` saves the patch to `.agent/patches/` and says why
-- [ ] A trajectory JSON is written on normal exit, error and Ctrl+C, without the API key
-- [ ] `uv tool install --editable .` then `coding-agent "…"` works from any repo
+- [x] Empty diff says "no file changes"; otherwise the stat then the diff, then `[a]pply / [d]iscard`; Ctrl+C or Ctrl+D at the prompt discards
+- [x] A failed `git apply --check` saves the patch to `.agent/patches/` and says why
+- [x] A trajectory JSON is written on normal exit, error and Ctrl+C, without the API key
+- [ ] `uv tool install --editable .` then `coding-agent "…"` works from any repo (checked with `uv run coding-agent`; the global install is left to the user)
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest`
+- [x] All checks pass
 - [ ] Manual check: the user runs it once on a scratch repo with the real API
 
 **Dependencies:** Tasks 2 and 4

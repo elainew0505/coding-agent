@@ -47,7 +47,7 @@ sandbox.py (S, D helpers)       ← exists; tested first
 - [ ] Review with the user
 
 ### Phase C: End to end
-- [ ] Task 5: Review, apply, trajectory and the `coding-agent` command
+- [x] Task 5: Review, apply, trajectory and the `coding-agent` command
 - [ ] Task 6: Live task tests (against `../toy-repo`) and README
 
 ### Checkpoint C
