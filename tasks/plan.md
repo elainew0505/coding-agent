@@ -32,10 +32,10 @@ sandbox.py (S, D helpers)       ← exists; tested first
 
 ### Phase A: Foundation
 - [x] Task 1: uv project and the sandbox module
-- [ ] Task 2: Docker safety tests for the sandbox
+- [x] Task 2: Docker safety tests for the sandbox
 
 ### Checkpoint A
-- [ ] `uv run pytest` passes with Docker running; every S-rule safety test is green
+- [x] `uv run pytest` passes with Docker running; every S-rule safety test is green
 - [ ] Review with the user
 
 ### Phase B: The loop

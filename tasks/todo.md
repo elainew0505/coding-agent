@@ -36,12 +36,12 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Add `tests/conftest.py` (skip Docker tests when Docker isn't running; register `--live`) and Docker tests for every sandbox safety test in `SPEC.md` § Acceptance tests. Fix whatever they find in `sandbox.py`.
 
 **Acceptance criteria:**
-- [ ] Tests for: no network, `; touch /tmp/pwned` never reaching the host, timeout (including background processes), output cap, Ctrl+C killing everything but PID 1, deny-listed and ignored files absent, `rm -rf /workspace` still diffable, subfolder run applying at the top folder, failed `git apply --check` leaving the repo unchanged, no labelled container left after exit
-- [ ] Without Docker running, these tests are skipped, not failed
+- [x] Tests for: no network, `; touch /tmp/pwned` never reaching the host, timeout (including background processes), output cap, Ctrl+C killing everything but PID 1, deny-listed and ignored files absent, `rm -rf /workspace` still diffable, subfolder run applying at the top folder, failed `git apply --check` leaving the repo unchanged, no labelled container left after exit
+- [x] Without Docker running, these tests are skipped, not failed
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/test_sandbox.py`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest tests/test_sandbox.py` (or by hand: `uv run python tests/test_sandbox.py [name ...]`)
+- [x] All checks pass
 
 **Dependencies:** Task 1
 
