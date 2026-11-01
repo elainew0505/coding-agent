@@ -1,6 +1,6 @@
 ---
 name: security-and-hardening
-description: Hardens the coding agent against misuse of its own tools. Use when writing or changing the Docker sandbox, the bash or text-editor tool handlers, path resolution, the agent loop's handling of tool output, config and secret loading, logging, or recorded test fixtures. Use when adding a dependency, auditing dependencies, or assessing supply-chain risk. Use when anything model-generated reaches a shell, a file path, or the host.
+description: Hardens the coding agent against misuse of its own tools. Use when writing or changing the Docker sandbox, copying the repo in, the review and `git apply` step, the `run_command` handler, the agent loop's handling of tool output, secret loading, the trajectory file, or recorded test fixtures. Use when adding a dependency, auditing dependencies, or assessing supply-chain risk. Use when anything model-generated reaches a shell, a file path, or the host.
 ---
 
 # Security and Hardening
@@ -11,10 +11,11 @@ This project runs commands and edits files on behalf of a model. The model is no
 
 ## When to Use
 
-- Building or changing the Docker sandbox (image, mounts, flags, lifecycle)
-- Writing the `bash` or `text_editor` tool handlers
-- Anything that turns a model-supplied string into a path, an argv, or a container setting
-- Loading config, reading `ANTHROPIC_API_KEY`, logging, or recording fixtures
+- Building or changing the Docker sandbox (image, flags, lifecycle)
+- Changing what is copied into the container, or how the diff is reviewed and applied
+- Writing the `run_command` handler
+- Anything that turns a model-supplied string into an argv or a container setting
+- Reading `ANTHROPIC_API_KEY`, writing the trajectory, or recording fixtures
 - Adding or upgrading a dependency
 
 ## Process: Threat Model First
@@ -22,17 +23,17 @@ This project runs commands and edits files on behalf of a model. The model is no
 Before hardening, spend five minutes thinking like an attacker:
 
 1. **Map the trust boundaries.** Untrusted data enters through: model output (tool inputs), tool results (command output, file contents), the workspace itself (a cloned repo can contain anything, including symlinks and planted config), and the task text. Trust follows who *wrote* a value, not which channel delivered it.
-2. **Name the assets.** The host filesystem outside the workspace, the API key, the user's other credentials (`~/.ssh`, `~/.aws`, git credentials), the network, the user's money (token spend), and the workspace's own git history.
+2. **Name the assets.** Your real repo and the rest of the host filesystem, the API key, the user's other credentials (`~/.ssh`, `~/.aws`, git credentials), the network, the user's money (token spend), and the workspace's own git history.
 3. **Run STRIDE over each boundary:**
 
 | Threat | Ask | Mitigation here |
 |---|---|---|
 | **S**poofing | Can tool output pose as the user or the system? | Tool results stay in `tool_result` blocks; never merged into user or system text |
-| **T**ampering | Can the model write outside the workspace? | Resolved-path checks, sandbox mounts, no host-side shell |
-| **R**epudiation | Can we reconstruct what the agent did? | Log every tool call and its outcome (redacted) |
-| **I**nformation disclosure | Can the key or host files leak? | Key never enters the sandbox or logs; minimal mounts |
-| **D**enial of service | Can a command hang or flood? | Timeouts, CPU/memory/pid limits, output truncation, turn and token caps |
-| **E**levation of privilege | Can the sandbox reach the host? | Non-root user, dropped capabilities, no Docker socket, no privileged mode |
+| **T**ampering | Can the model change your real repo? | No mounts; changes leave only as a diff you review before `git apply`; no host-side shell |
+| **R**epudiation | Can we reconstruct what the agent did? | The trajectory file holds every message and tool result |
+| **I**nformation disclosure | Can the key or host files leak? | Key never enters the sandbox or the trajectory; no mounts; secret files never copied in (S9); no network |
+| **D**enial of service | Can a command hang or flood? | Timeouts, CPU/memory/pid limits, output truncation, call cap and context backstop |
+| **E**levation of privilege | Can the sandbox reach the host? | No mounts, dropped capabilities, `no-new-privileges`, no Docker socket, no privileged mode |
 
 4. **Write abuse cases next to use cases.** For each tool, ask "what's the worst input the model could send?" and make that a test.
 
@@ -41,17 +42,19 @@ Before hardening, spend five minutes thinking like an attacker:
 ### Always Do (No Exceptions)
 
 - **Run every model-issued command inside the sandbox**, invoked with an argv list (`["docker", "exec", ...]`), never `shell=True` on the host
-- **Resolve every file-tool path** (symlinks included) and reject anything not under the resolved workspace root
+- **Copy in only what `SPEC.md` S4 and S9 allow**: files git would track, never `.agent/` or deny-listed secret files
+- **Show the whole diff before `git apply`**, and write nothing to the repo until the user chooses apply
 - **Validate every tool input** with pydantic before acting on it
-- **Bound everything**: per-command timeout, container resource limits, output truncation, max turns, max tokens
-- **Return failures as `is_error: True` tool results**, with a short message, not a host stack trace
+- **Bound everything**: per-command timeout, container resource limits, output truncation, call cap, context backstop
+- **Return failures as `is_error: True` tool results**, with a short message, not a host stack trace. A non-zero exit code is a normal result, not a failure
 - **Treat tool output as data**: it goes back to the model in a `tool_result`, never into `system`, never parsed as instructions by our code
 
 ### Ask First (Requires Human Approval)
 
 - Giving the sandbox network access, or widening it
-- Adding a mount, or mounting anything read-write besides the workspace
+- Adding any mount
 - Changing the container user, capabilities, or security options
+- Changing what is copied in (S4, S9) or how the diff is applied
 - Adding a new tool, or letting a tool act on the host
 - Adding a dependency
 
@@ -59,10 +62,11 @@ Before hardening, spend five minutes thinking like an attacker:
 
 - **Never pass `ANTHROPIC_API_KEY`** (or any host env) into the container
 - **Never mount** the Docker socket, `$HOME`, `~/.ssh`, `~/.aws`, `~/.config`, or `/`
-- **Never run the container `--privileged`** or as root
+- **Never run the container `--privileged`**, and run it as root only with `--cap-drop ALL`, `no-new-privileges` and no mounts
 - **Never log or print the key**, request headers, or full environment
 - **Never commit fixtures** containing keys, auth headers, or real user data
 - **Never let model output choose** container flags, mounts, images, or host paths
+- **Never read config, instructions or hooks from the workspace**: a repo must not be able to change the agent's limits or behaviour
 
 ## Hardening Controls
 
@@ -72,30 +76,25 @@ Reference implementations (some in TypeScript; the principle carries over) live 
 
 The container is the main boundary. Start locked down and loosen only with approval:
 
-- Non-root user (`--user`), `--cap-drop ALL`, `--security-opt no-new-privileges`
-- `--network none` by default
-- `--memory`, `--cpus`, `--pids-limit` set; a wall-clock timeout per command, enforced by the host, which kills the process (not just stops waiting)
-- Mount only the workspace, read-write; everything else read-only or absent. Prefer a read-only root filesystem with a tmpfs for scratch
+- No mounts at all; the repo is copied in. Root inside is acceptable only because of that, with `--cap-drop ALL` and `--security-opt no-new-privileges`
+- `--network none`
+- `--memory`, `--cpus`, `--pids-limit` set
+- A wall-clock timeout per command that kills the process inside the container (`timeout` in the container, a host backstop, then `bash -c 'kill -KILL -1'`), not just stops waiting: killing the host-side `docker exec` leaves the command running
 - An image pinned by digest, not a floating tag
 - No secrets in the image, its build args, or its environment
 
 Verify flags against the current Docker docs (`source-driven-development`) rather than from memory.
 
-### File tools and paths
+### Copy-in and apply
 
-The text-editor tool takes a model-supplied path. Before any read or write:
+These are the only two places the harness touches your repo, so they carry the safety of the whole design:
 
-```python
-target = (workspace / requested).resolve()
-if not target.is_relative_to(workspace.resolve()):
-    return error_result("path is outside the workspace")
-```
+- **Copy-in** lists files with `git ls-files` and drops `.agent/` and the deny list (S4, S9) before anything enters the container. Anything copied in can be read by the model, sent to the API and written to the trajectory.
+- **Work from the repo's top folder** (`git rev-parse --show-toplevel`) for every host step; `git apply` reads patch paths relative to it.
+- **Apply** runs `git apply --check` first, then `git apply`, only after the user chooses apply. If the check fails, save the patch to `.agent/patches/` instead of forcing it.
+- The harness's git directory lives outside `/workspace` (S5), so the model can't delete or rewrite the baseline the diff is taken against.
 
-- Resolve, then compare. String-prefix checks on the raw path miss `..` and symlinks.
-- **Symlink race:** the model can create symlinks from inside the sandbox (via `bash`) in the mounted workspace. If file tools run on the host, a link can be swapped between check and use. Prefer running file operations inside the container too; otherwise open with no-follow semantics and re-check the opened file.
-- Reject writes to `.git/` internals unless the task explicitly needs them, and cap file sizes read into context.
-
-Patterns: [Destructive paths](references/hardening-patterns.md#destructive-operations-on-derived-paths). Worked checklist: `../../references/security-checklist.md`.
+Worked checklist: `../../references/security-checklist.md`.
 
 ### Commands
 
@@ -109,7 +108,7 @@ Pattern: [Injection](references/hardening-patterns.md#injection).
 
 Anything a tool returns can contain "ignore previous instructions". Defenses that actually hold are in code, not in prose:
 
-- The sandbox and path checks above bound what an injected instruction can do.
+- The sandbox and the diff review above bound what an injected instruction can do.
 - Tool results are only ever `tool_result` content. Never interpolate them into `system` (which also breaks prompt caching).
 - Our own code never branches on instruction-like text in tool output.
 - Cap turns and spend so a hijacked loop terminates.
@@ -118,8 +117,8 @@ Pattern: [LLM output handling](references/hardening-patterns.md#llm-output-handl
 
 ### Secrets and logging
 
-- Load the key with `pydantic-settings` as a `SecretStr`, from the environment only. Pass it to the `anthropic` client and nowhere else.
-- Redact logs: no headers, no env dumps. Log tool calls and outcomes, not the key.
+- The `anthropic` client reads `ANTHROPIC_API_KEY` from the environment. The harness doesn't copy it anywhere else: not into the container, the trajectory or any printed output.
+- The trajectory holds messages and tool results only: no headers, no env dumps, no key.
 - **Recorded fixtures in `tests/fixtures/` are a leak path.** Record only response bodies; scrub headers and request metadata before saving, and grep fixtures before committing.
 - A key that reaches a remote is compromised the moment it lands: rotate it first, then purge history.
 
@@ -142,22 +141,23 @@ Before sign-off, walk the AI/LLM, dependency and error-handling sections of `../
 | Rationalization | Reality |
 |---|---|
 | "The system prompt tells the model not to do that" | The system prompt is not a security boundary. An injected instruction in a README can override it. Enforce in code. |
-| "It's in Docker, so it's safe" | Only as safe as its flags. A mounted socket, root user, or `$HOME` mount makes the container a formality. |
-| "The path starts with the workspace dir, so it's inside" | `workspace/../etc` and `workspace/link -> /` both start with it. Resolve, then compare. |
+| "It's in Docker, so it's safe" | Only as safe as its flags. A mounted socket, `$HOME` mount, or root with capabilities left on makes the container a formality. |
+| "The user reviews the diff, so anything can go in it" | Long diffs get skimmed. Keep tasks small and the diff readable; the review is the one checkpoint. |
 | "It's only my own machine" | The workspace content isn't yours. Any repo you point the agent at can carry injected instructions. |
 | "The fixture is just a response" | Recorders capture headers. Scrub before saving. |
-| "We need network for pip install" | Then grant it per task with approval, not by default. |
+| "We need network for pip install" | Bake dependencies into the image (S1). Network per command is a Phase 3 decision, not a quick fix. |
 
 ## Red Flags
 
 - `subprocess.run(..., shell=True)` with any model-derived string on the host
-- A path check done on the raw string, or before resolving symlinks
+- Any `-v`/`--mount` on `docker run`, especially `/var/run/docker.sock`, `$HOME`, or a credentials directory
 - `os.environ` passed wholesale to `docker run`, or any `-e ANTHROPIC_API_KEY`
-- A mount of `/var/run/docker.sock`, `$HOME`, or a credentials directory
-- Container running as root, `--privileged`, or with network on by default
+- Container `--privileged`, root without `--cap-drop ALL`, or network on
+- Copy-in by `tar .` or `cp -r` instead of the S4 file list; a deny-listed file reaching `/workspace`
+- `git apply` without `--check` first, or before the user chooses apply
 - Commands with no timeout; output returned untruncated
 - Tool output concatenated into `system` or into a user-role text block
-- No max-turns or token budget on the loop
+- No call cap or context backstop on the loop
 - Fixtures with `authorization`, `x-api-key`, or `sk-ant-` in them
 - `uv pip install` in docs or scripts; no `uv.lock` committed
 
@@ -165,11 +165,12 @@ Before sign-off, walk the AI/LLM, dependency and error-handling sections of `../
 
 After implementing security-relevant code:
 
-- [ ] Tests cover `..`, absolute paths, and symlink escapes for every file tool, and they are rejected with `is_error: True`
-- [ ] A test proves a command that sleeps forever is killed at the timeout
-- [ ] A test proves huge output is truncated
-- [ ] The container runs non-root, no network, capabilities dropped, resource-limited, with only the workspace mounted
-- [ ] The key is absent from the container environment (`env` inside the sandbox doesn't show it) and from logs
+- [ ] A test proves a command that sleeps forever is killed at the timeout, background processes included
+- [ ] A test proves huge output is truncated without the harness holding all of it
+- [ ] A test proves shell metacharacters in a command never reach a host shell
+- [ ] The container has no mounts, no network, capabilities dropped, `no-new-privileges` and resource limits
+- [ ] A test proves deny-listed and ignored files are absent from `/workspace`
+- [ ] The key is absent from the container environment (`env` inside the sandbox doesn't show it) and from the trajectory
 - [ ] `grep -rE 'sk-ant-|x-api-key|authorization' tests/fixtures` finds nothing
-- [ ] The loop stops at max turns / token budget
+- [ ] The loop stops at the call cap and the context backstop
 - [ ] Dependency audit is clean or every deferral is documented

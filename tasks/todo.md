@@ -1,8 +1,8 @@
-# Tasks: coding-agent v1
+# Tasks: coding-agent MVP
 
-Plan and decisions: [plan.md](plan.md). Spec: [SPEC.md](../SPEC.md). Every task also meets the project Definition of Done (`.claude/references/definition-of-done.md`) and updates docs in the same commit (`CLAUDE.md` § Documentation).
+Plan: [plan.md](plan.md). Spec: [SPEC.md](../SPEC.md). Every task also meets the Definition of Done (`.claude/references/definition-of-done.md`) and updates docs in the same commit.
 
-Standard checks, referred to below as **all checks**:
+**All checks:**
 
 ```bash
 uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --check .
@@ -10,306 +10,138 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 ---
 
-## Phase 1: Prove the risky parts
+## Task 1: uv project and the sandbox module
 
-## Task 1: Project scaffold and `coding-agent --version`
-
-**Description:** Create the `uv` project with the stack from `CLAUDE.md`, a `src/coding_agent` package, a typer app exposing `--version`, pytest configured with `docker` and `live` markers excluded by default, and ruff/pyright configuration.
+**Description:** Create the `uv` project and move `src/sandbox.py` into the package layout from `SPEC.md` § Project layout. Pin the Dockerfile's base image by digest (S1). Remove leftover `__pycache__` folders from the old implementation.
 
 **Acceptance criteria:**
-- [ ] `uv sync` installs from a committed `uv.lock`
-- [ ] `uv run coding-agent --version` prints the package version
-- [ ] `uv run pytest` runs unit tests only (`addopts` excludes `docker` and `live`)
+- [ ] `uv sync` installs from a committed `uv.lock`; runtime deps are `anthropic` and `pydantic` only
+- [ ] `src/coding_agent/sandbox.py` exists; `python -m coding_agent.sandbox` still runs the demo
+- [ ] `Dockerfile` starts `FROM python:3.12-slim@sha256:…`
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_cli.py`
-- [ ] All checks pass (pyright strict on `src/`)
-- [ ] Manual check: fresh clone, `uv sync`, `uv run coding-agent --version`
+- [ ] All checks pass (no tests yet beyond collection)
+- [ ] Manual check: `docker build -t coding-agent:toy .` succeeds
 
 **Dependencies:** None
 
-**Files likely touched:**
-- `pyproject.toml`, `uv.lock`
-- `src/coding_agent/__init__.py`, `src/coding_agent/cli.py`
-- `tests/unit/test_cli.py`
+**Files likely touched:** `pyproject.toml`, `uv.lock`, `src/coding_agent/__init__.py`, `src/coding_agent/sandbox.py`, `Dockerfile`
 
 **Estimated scope:** Small
 
 ---
 
-## Task 2: Agent loop against a fake client
+## Task 2: Docker safety tests for the sandbox
 
-**Description:** Implement `loop.py`: send `system`, `tools` and `messages` through an injected client's `messages.stream(...)`; append the full `response.content`; dispatch every `tool_use` to a handler; return all results in one user message; stop on a turn without tool use. Enforce the turn and token limits and stop on `max_tokens` or context-window stop reasons. Tool handlers are injected, so this task uses a fake tool. Fixtures are built from SDK `Message` types in tests until Task 6 records real ones. Check request parameters against the `claude-api` skill first.
+**Description:** Add `tests/conftest.py` (skip Docker tests when Docker isn't running; register `--live`) and Docker tests for every sandbox safety test in `SPEC.md` § Acceptance tests. Fix whatever they find in `sandbox.py`.
 
 **Acceptance criteria:**
-- [ ] History is append-only and every `tool_use` gets a matching `tool_result` in a single user message; a handler error yields `is_error: true`
-- [ ] `system` and `tools` are byte-identical across all requests in a run
-- [ ] Turn limit, token limit and `max_tokens` each stop the loop with a distinct, named stop reason
-- [ ] Several tool calls in one response run one at a time in issue order; their results come back in that order, and a failing call doesn't stop the later ones (spec criterion 14)
+- [ ] Tests for: no network, `; touch /tmp/pwned` never reaching the host, timeout (including background processes), output cap, Ctrl+C killing everything but PID 1, deny-listed and ignored files absent, `rm -rf /workspace` still diffable, subfolder run applying at the top folder, failed `git apply --check` leaving the repo unchanged, no labelled container left after exit
+- [ ] Without Docker running, these tests are skipped, not failed
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_loop.py`
+- [ ] Tests pass: `uv run pytest tests/test_sandbox.py`
 - [ ] All checks pass
 
 **Dependencies:** Task 1
 
-**Files likely touched:**
-- `src/coding_agent/loop.py`
-- `src/coding_agent/prompts.py`
-- `src/coding_agent/tools/__init__.py` (`ToolResult`, handler protocol)
-- `tests/fakes.py`, `tests/unit/test_loop.py`
+**Files likely touched:** `tests/conftest.py`, `tests/test_sandbox.py`, `src/coding_agent/sandbox.py`
 
 **Estimated scope:** Medium
 
 ---
 
-## Task 3: Sandbox container lifecycle with locked-down flags
+## Checkpoint A: review with the user
 
-**Description:** Implement `Sandbox` as a context manager that starts one container (`sleep infinity`) with the spec's flags (host uid:gid, `--cap-drop ALL`, `no-new-privileges`, `--network none` unless allowed, memory/CPU/pid limits, workspace mounted read-write at `/workspace` and its `.git/` read-only, no host env), runs one-off commands with a timeout, and always removes the container. Pin `python:3.12-slim` by digest. First verify the nested read-only `.git` mount on Docker Desktop. Write the decision record for using the Docker CLI.
+---
+
+## Task 3: `run_command` tool and config
+
+**Description:** `config.py` holds the constants from L9 and S9 (the sandbox reads its limits and deny list from it). `tools.py` holds `RunCommandInput`, the hand-written `input_schema` constant, the tool description and a handler that validates input, calls `Sandbox.run` and returns the result text.
 
 **Acceptance criteria:**
-- [ ] Network access fails by default and succeeds with networking allowed
-- [ ] Writing under `/workspace/.git` fails; writing elsewhere in `/workspace` succeeds and the file is owned by the host user
-- [ ] `env` in the container has no `ANTHROPIC_API_KEY`, and the container is gone after the context exits, including when the body raises
+- [ ] Invalid input (empty command, timeout outside 1–300) returns an `is_error` result with the pydantic message
+- [ ] A non-zero exit is a normal result starting `exit_code: <n>`; a timeout is `is_error`
+- [ ] A unit test checks the `input_schema` constant agrees with `RunCommandInput`
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest -m docker tests/docker/test_sandbox.py`
-- [ ] Unit test for the exact `docker run` argv: `uv run pytest tests/unit/test_sandbox_args.py`
+- [ ] Tests pass: `uv run pytest tests/test_tools.py`
 - [ ] All checks pass
 
 **Dependencies:** Task 1
 
-**Files likely touched:**
-- `src/coding_agent/sandbox.py`
-- `tests/docker/test_sandbox.py`, `tests/unit/test_sandbox_args.py`
-- `docs/decisions/0002-docker-cli-not-sdk.md`
+**Files likely touched:** `src/coding_agent/config.py`, `src/coding_agent/tools.py`, `src/coding_agent/sandbox.py`, `tests/test_tools.py`
 
-**Estimated scope:** Medium
+**Estimated scope:** Small
 
 ---
 
-## Task 4: Persistent bash session and the bash tool
+## Task 4: Agent loop
 
-**Description:** Add a persistent shell to `Sandbox` (one `docker exec -i ... bash` process; marker line with exit code after each command) and the bash tool handler: run a command, combine stdout/stderr, truncate head and tail with a note of how much was cut, report the exit code, support `restart`. On timeout, kill all container processes except PID 1, restart the shell, and return an error. Write the decision record for the session design.
+**Description:** `prompts.py` (system prompt) and the loop in `agent.py`, implementing L1–L9 with an injected client and sandbox. Check current API docs for streaming, effort and prompt caching first.
 
 **Acceptance criteria:**
-- [ ] `cd` and exported variables persist across calls; `restart` resets them
-- [ ] `sleep infinity` returns a timeout error at the configured limit, and the next command works
-- [ ] Output larger than the limit is truncated with head, tail and a count of characters cut
+- [ ] Unit tests with a fake client (replies built as `anthropic.types.Message`) cover: tool use then `end_turn`; `max_tokens` with a cut-off tool call stops without running it; the 50-call cap; the context backstop; API error; Ctrl+C during a command and during streaming
+- [ ] Every request has byte-identical `system` and `tools`; all tool results for a turn are in one user message
+- [ ] One recorded reply in `tests/fixtures/` loads as a `Message`
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest -m docker tests/docker/test_bash.py` and `uv run pytest tests/unit/test_truncate.py`
+- [ ] Tests pass: `uv run pytest tests/test_agent.py`
 - [ ] All checks pass
 
 **Dependencies:** Task 3
 
-**Files likely touched:**
-- `src/coding_agent/sandbox.py`
-- `src/coding_agent/tools/bash.py`
-- `tests/docker/test_bash.py`, `tests/unit/test_truncate.py`
-- `docs/decisions/0003-persistent-bash-session.md`
+**Files likely touched:** `src/coding_agent/prompts.py`, `src/coding_agent/agent.py`, `tests/fakes.py`, `tests/test_agent.py`, `tests/fixtures/`
 
 **Estimated scope:** Medium
 
 ---
 
-## Checkpoint 1: Foundations
-- [ ] `uv run pytest`, `uv run pytest -m docker`, pyright and ruff all pass
-- [ ] Loop and sandbox each work on their own
-- [ ] Review with human before wiring them together
+## Checkpoint B: review with the user
 
 ---
 
-## Phase 2: Walking skeleton
+## Task 5: Review, apply, trajectory and the `coding-agent` command
 
-## Task 5: Settings, preflight checks and exit codes
-
-**Description:** Implement `config.py` with `pydantic-settings`: defaults, then `~/.config/coding-agent/config.toml`, then `CODING_AGENT_*` env vars, then CLI flags; API key as `SecretStr`; never read config from the workspace. Add the `run` command's arguments and preflight checks (Docker reachable, key set, workspace is a git repo, warning on a dirty tree) and map outcomes to exit codes.
+**Description:** Wire it together: `__main__.py` runs start → copy in → baseline → loop → review → apply or discard → trajectory → cleanup (`SPEC.md` § How a run works, D1–D6, § Output, § Trajectory). Remove the demo from `sandbox.py`.
 
 **Acceptance criteria:**
-- [ ] Precedence flags > env > user config file > defaults is tested, and a config file inside the workspace is ignored
-- [ ] Not a git repo, missing key, or Docker unavailable each exit `2` with a one-line message; a dirty tree warns and continues
-- [ ] The key never appears in `repr`, logs or error output
-- [ ] The dirty-tree check uses the hardened `git status` from spec § Host-side git, in one shared helper that Task 6 reuses; a temp repo with `core.fsmonitor` set to a script proves the script never runs (spec criterion 13)
+- [ ] Empty diff says "no file changes"; otherwise the stat then the diff, then `[a]pply / [d]iscard`; Ctrl+C or Ctrl+D at the prompt discards
+- [ ] A failed `git apply --check` saves the patch to `.agent/patches/` and says why
+- [ ] A trajectory JSON is written on normal exit, error and Ctrl+C, without the API key
+- [ ] `uv tool install --editable .` then `coding-agent "…"` works from any repo
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_config.py tests/unit/test_cli.py`
+- [ ] Tests pass: `uv run pytest`
 - [ ] All checks pass
+- [ ] Manual check: the user runs it once on a scratch repo with the real API
 
-**Dependencies:** Task 1
+**Dependencies:** Tasks 2 and 4
 
-**Files likely touched:**
-- `src/coding_agent/config.py`
-- `src/coding_agent/cli.py`
-- `tests/unit/test_config.py`, `tests/unit/test_cli.py`
+**Files likely touched:** `src/coding_agent/__main__.py`, `src/coding_agent/agent.py`, `src/coding_agent/sandbox.py`, `tests/test_agent.py`, `pyproject.toml`
 
 **Estimated scope:** Medium
 
 ---
 
-## Task 6: `coding-agent run` end to end with the bash tool
+## Task 6: Live task tests and README
 
-**Description:** Wire CLI → Sandbox → loop with the real `anthropic` client and the bash tool declared. Print model text, tool calls and truncated results plainly (rich streaming comes in Task 10), then the final message, stop reason, turns/tokens used and `git diff --stat` (run on the host). Record two real API responses as fixtures (body only) and switch the loop tests to them. Write the README's install/configure/run section.
-
-**Acceptance criteria:**
-- [ ] Live: `coding-agent run "create hello.py that prints hello" --workspace <temp repo>` creates the file, exits `0`, and leaves it uncommitted (spec criterion 1)
-- [ ] Hitting the turn limit exits `3` and names the limit
-- [ ] The final `git diff --stat` goes through the hardened helper; with `diff.external` and a textconv driver set to a script, the script never runs (spec criterion 13)
-- [ ] `tests/fixtures/` contains recorded responses and a unit test proves none match `sk-ant-|x-api-key|authorization`
-
-**Verification:**
-- [ ] Tests pass: `uv run pytest` and `uv run pytest -m live tests/live/test_run.py`
-- [ ] All checks pass
-- [ ] Manual check: run a small task on a scratch repo and read the output
-
-**Dependencies:** Tasks 2, 4, 5
-
-**Files likely touched:**
-- `src/coding_agent/cli.py`, `src/coding_agent/prompts.py`
-- `tests/live/test_run.py`, `tests/fixtures/*.json`, `tests/unit/test_fixtures_clean.py`
-- `README.md`
-
-**Estimated scope:** Medium
-
----
-
-## Checkpoint 2: First real run
-- [ ] Spec success criterion 1 passes live
-- [ ] README has install, configure and run instructions
-- [ ] Review with human
-
----
-
-## Phase 3: Text editor tool
-
-## Task 7: Editor `view` and `create` with workspace path checks
-
-**Description:** Implement path resolution inside the container (`realpath -m`, path passed as an argument) that rejects anything outside `/workspace` and anything under `/workspace/.git`, then `view` (line-numbered, directory listing, truncated for large files) and `create`. Not yet declared to the model. Write the decision record on path checks versus the host boundary.
+**Description:** Live tests for the four task tests, run against the existing toy repo at `../toy-repo` (a sibling of this repo, with the planted off-by-one bug in `calc/ranges.py`). Each test copies the toy repo into `tmp_path` first, so the original is never changed. Skipped unless `--live` and a key are given; only the user runs them. Plus a README covering install, run and the security model in plain terms.
 
 **Acceptance criteria:**
-- [ ] `..`, absolute paths outside the workspace, symlinks pointing outside, and `.git/` paths each return `is_error: true`
-- [ ] `view` shows numbered lines and truncates large files; `create` writes the exact content, including content with quotes and `$`
-- [ ] Nothing outside the workspace changes in any abuse test
-- [ ] The `.git/` rejection is also unit-tested against a fake sandbox with no read-only mount, so the path check is proven on its own (Task 3 proves the mount on its own)
+- [ ] `uv run pytest` skips the live tests; `uv run pytest --live` runs them (user only)
+- [ ] README says: build the image, install, run, add `.agent/` to `.gitignore`, keep Docker Desktop's disk limit below your free space, read the whole diff before applying
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest -m docker tests/docker/test_editor.py` and `uv run pytest tests/unit/test_editor.py`
 - [ ] All checks pass
+- [ ] The user runs `uv run pytest --live` and the four task tests pass
 
-**Dependencies:** Task 6
+**Dependencies:** Task 5
 
-**Files likely touched:**
-- `src/coding_agent/tools/editor.py`
-- `src/coding_agent/sandbox.py` (read/write helpers)
-- `tests/docker/test_editor.py`, `tests/unit/test_editor.py`
-- `docs/decisions/0004-path-checks-inside-container.md`
-
-**Estimated scope:** Medium
-
----
-
-## Task 8: Editor `str_replace` and `insert`; declare the editor tool
-
-**Description:** Add `str_replace` (exactly one match required) and `insert` (after a given line), then declare `text_editor_20250728` alongside bash so the model can use it. Verify the tool version and declaration against current docs first.
-
-**Acceptance criteria:**
-- [ ] `str_replace` with zero or multiple matches returns an error naming the count and leaves the file unchanged
-- [ ] `insert` at line 0, a middle line and the last line produces the expected file; an out-of-range line is an error
-- [ ] Live: a task that edits an existing file completes using the editor tool
-
-**Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_editor.py` and `uv run pytest -m live tests/live/test_run.py`
-- [ ] All checks pass
-
-**Dependencies:** Task 7
-
-**Files likely touched:**
-- `src/coding_agent/tools/editor.py`
-- `src/coding_agent/prompts.py`
-- `tests/unit/test_editor.py`, `tests/live/test_run.py`
-
-**Estimated scope:** Medium
-
----
-
-## Checkpoint 3: Both tools
-- [ ] Live run that edits an existing file succeeds
-- [ ] Review with human
-
----
-
-## Phase 4: Hardening and polish
-
-## Task 9: Ctrl-C handling and guaranteed container cleanup
-
-**Description:** On SIGINT, stop the loop, remove the container, print what was done so far, and exit `130`.
-
-**Acceptance criteria:**
-- [ ] Sending SIGINT to a running `coding-agent run` exits `130` (spec criterion 10)
-- [ ] No container from that run remains afterward
-
-**Verification:**
-- [ ] Tests pass: `uv run pytest -m docker tests/docker/test_interrupt.py`
-- [ ] All checks pass
-
-**Dependencies:** Task 6
-
-**Files likely touched:**
-- `src/coding_agent/cli.py`
-- `tests/docker/test_interrupt.py`
+**Files likely touched:** `tests/test_live.py`, `README.md`
 
 **Estimated scope:** Small
 
 ---
 
-## Task 10: Streamed terminal output with rich
-
-**Description:** Move output into `render.py`: model text appears as it streams, tool calls show the command or path, results are shown truncated, and the end-of-run summary is formatted.
-
-**Acceptance criteria:**
-- [ ] Text is rendered incrementally from stream events, not after the full message
-- [ ] Rendering is tested against a captured `rich` console for a replayed run
-
-**Verification:**
-- [ ] Tests pass: `uv run pytest tests/unit/test_render.py`
-- [ ] All checks pass
-- [ ] Manual check: a live run reads well in the terminal
-
-**Dependencies:** Task 6
-
-**Files likely touched:**
-- `src/coding_agent/render.py`
-- `src/coding_agent/loop.py` (emit events)
-- `tests/unit/test_render.py`
-
-**Estimated scope:** Small
-
----
-
-## Task 11: Success-criteria pass and v1 docs
-
-**Description:** Map each of the spec's 14 success criteria to the test that proves it, fill any gaps, and finish the docs: README security model section, `CHANGELOG.md` entry for 0.1.0, spec status updated.
-
-**Acceptance criteria:**
-- [ ] Every spec success criterion has a named passing test (the list lives in the PR description)
-- [ ] README explains in plain terms what the sandbox does and does not protect against
-- [ ] `CHANGELOG.md` has a 0.1.0 entry
-
-**Verification:**
-- [ ] Tests pass: `uv run pytest`, `uv run pytest -m docker`, `uv run pytest -m live`
-- [ ] All checks pass
-
-**Dependencies:** Tasks 8, 9, 10
-
-**Files likely touched:**
-- `README.md`, `CHANGELOG.md`, `SPEC.md`
-- `tests/...` (gaps only)
-
-**Estimated scope:** Medium
-
----
-
-## Checkpoint 4: v1 complete
-- [ ] All 14 spec success criteria verified
-- [ ] Definition of Done holds
-- [ ] Ready for review
+## Checkpoint C: every `SPEC.md` acceptance test checked off; review with the user; open the PR
