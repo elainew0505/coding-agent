@@ -15,13 +15,13 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Create the `uv` project and move `src/sandbox.py` into the package layout from `SPEC.md` § Project layout. Pin the Dockerfile's base image by digest (S1). Remove leftover `__pycache__` folders from the old implementation.
 
 **Acceptance criteria:**
-- [ ] `uv sync` installs from a committed `uv.lock`; runtime deps are `anthropic` and `pydantic` only
-- [ ] `src/coding_agent/sandbox.py` exists; `python -m coding_agent.sandbox` still runs the demo
-- [ ] `Dockerfile` starts `FROM python:3.12-slim@sha256:…`
+- [x] `uv sync` installs from a committed `uv.lock`; runtime deps are `anthropic` and `pydantic` only
+- [x] `src/coding_agent/sandbox.py` exists; `python -m coding_agent.sandbox` still runs the demo
+- [x] `Dockerfile` starts `FROM python:3.12-slim@sha256:…`
 
 **Verification:**
-- [ ] All checks pass (no tests yet beyond collection)
-- [ ] Manual check: `docker build -t coding-agent:toy .` succeeds
+- [x] All checks pass (no tests yet beyond collection)
+- [x] Manual check: `docker build -t coding-agent:toy .` succeeds
 
 **Dependencies:** None
 

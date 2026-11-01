@@ -31,7 +31,7 @@ sandbox.py (S, D helpers)       ← exists; tested first
 ## Task list
 
 ### Phase A: Foundation
-- [ ] Task 1: uv project and the sandbox module
+- [x] Task 1: uv project and the sandbox module
 - [ ] Task 2: Docker safety tests for the sandbox
 
 ### Checkpoint A

@@ -1,0 +1,32 @@
+[project]
+name = "coding-agent"
+version = "0.0.1"
+description = "A minimal coding agent: Claude works on a copy of your repo in a Docker sandbox, and you review the diff."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=2.3.0",
+    "pydantic>=2.14.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["*.md"]  # don't reformat code examples inside docs
+
+[tool.pyright]
+include = ["src", "tests"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
