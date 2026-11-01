@@ -39,7 +39,7 @@ sandbox.py (S, D helpers)       ← exists; tested first
 - [ ] Review with the user
 
 ### Phase B: The loop
-- [ ] Task 3: `run_command` tool and config
+- [x] Task 3: `run_command` tool and config
 - [ ] Task 4: Agent loop
 
 ### Checkpoint B

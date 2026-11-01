@@ -21,8 +21,12 @@ testpaths = ["tests"]
 line-length = 100
 extend-exclude = ["*.md"]  # don't reformat code examples inside docs
 
+[tool.ruff.lint.isort]
+known-local-folder = ["fakes"]  # tests/fakes.py, imported as `fakes` so test files also run by hand
+
 [tool.pyright]
 include = ["src", "tests"]
+extraPaths = ["tests"]
 
 [dependency-groups]
 dev = [

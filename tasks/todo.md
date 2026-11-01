@@ -60,13 +60,13 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** `config.py` holds the constants from L9 and S9 (the sandbox reads its limits and deny list from it). `tools.py` holds `RunCommandInput`, the hand-written `input_schema` constant, the tool description and a handler that validates input, calls `Sandbox.run` and returns the result text.
 
 **Acceptance criteria:**
-- [ ] Invalid input (empty command, timeout outside 1–300) returns an `is_error` result with the pydantic message
-- [ ] A non-zero exit is a normal result starting `exit_code: <n>`; a timeout is `is_error`
-- [ ] A unit test checks the `input_schema` constant agrees with `RunCommandInput`
+- [x] Invalid input (empty command, timeout outside 1–300) returns an `is_error` result with the pydantic message
+- [x] A non-zero exit is a normal result starting `exit_code: <n>`; a timeout is `is_error`
+- [x] A unit test checks the `input_schema` constant agrees with `RunCommandInput`
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/test_tools.py`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest tests/test_tools.py`
+- [x] All checks pass
 
 **Dependencies:** Task 1
 

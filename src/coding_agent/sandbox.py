@@ -19,7 +19,8 @@ Spec rules covered (see SPEC.md):
           remove leftover labelled containers            S7
 
 Try it from inside a git repo (e.g. the toy repo):
-  uv run --project ~/code/coding-agent python -m coding_agent.sandbox coding-agent:toy
+  uv run --project ~/code/coding-agent python -m coding_agent.sandbox [image]
+(the image defaults to config.IMAGE, coding-agent:toy)
 """
 
 import atexit
@@ -34,14 +35,20 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from coding_agent.config import (  # timeouts, output cap and deny list (L9, S9)
+    BACKSTOP_EXTRA,
+    DEFAULT_TIMEOUT,
+    DENY_DIRS,
+    DENY_NAMES,
+    HEAD_CHARS,
+    IMAGE,
+    MAX_TIMEOUT,
+    TAIL_CHARS,
+)
+
 LABEL = "coding-agent=1"
 WORKDIR = "/workspace"
 HARNESS_GIT = "/harness.git"  # outside /workspace, so the model never sees it
-DEFAULT_TIMEOUT = 60
-MAX_TIMEOUT = 300
-BACKSTOP_EXTRA = 10  # seconds the host waits beyond the in-container timeout
-HEAD_CHARS = 5_000  # output cap: keep the first 5,000 ...
-TAIL_CHARS = 5_000  # ... and the last 5,000 characters
 
 # S2: the lockdown flags.
 LOCKDOWN_FLAGS = [
@@ -59,10 +66,6 @@ LOCKDOWN_FLAGS = [
     "no-new-privileges",
 ]
 
-# S9: never copied, even if git tracks them. Matched against the file name only.
-DENY_NAMES = [".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ecdsa*", "id_ed25519*"]
-DENY_DIRS = [".agent"]
-
 
 class SandboxError(Exception):
     """Something went wrong with Docker or the repo (not with a command you ran)."""
@@ -72,6 +75,7 @@ class SandboxError(Exception):
 class CommandResult:
     exit_code: int
     output: str  # stdout and stderr combined, capped
+    timed_out: bool = False  # stopped by the timeout (the tool marks this is_error)
 
     def __str__(self):
         return f"exit_code: {self.exit_code}\n{self.output}"
@@ -370,7 +374,7 @@ class Sandbox:
             proc.kill()
             proc.wait()
             reader.join(5)
-            return CommandResult(124, out.text() + note)
+            return CommandResult(124, out.text() + note, timed_out=True)
         except KeyboardInterrupt:
             self.kill_all()
             proc.kill()
@@ -378,9 +382,10 @@ class Sandbox:
             raise
         reader.join(5)
         output = out.text()
-        if proc.returncode == 124:
+        timed_out = proc.returncode == 124  # what `timeout` exits with when it stops a command
+        if timed_out:
             output += note
-        return CommandResult(proc.returncode, output)
+        return CommandResult(proc.returncode, output, timed_out=timed_out)
 
     def kill_all(self):
         """Kill every process in the container except PID 1 (`sleep infinity`).
@@ -489,6 +494,6 @@ def demo(image):
 
 if __name__ == "__main__":
     try:
-        demo(sys.argv[1] if len(sys.argv) > 1 else "coding-agent:toy")
+        demo(sys.argv[1] if len(sys.argv) > 1 else IMAGE)
     except SandboxError as e:
         sys.exit(f"Error: {e}")

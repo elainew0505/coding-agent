@@ -21,8 +21,8 @@ import threading
 
 import pytest
 
+from coding_agent.config import MAX_TIMEOUT
 from coding_agent.sandbox import (
-    MAX_TIMEOUT,
     Sandbox,
     SandboxError,
     apply_patch,
@@ -107,6 +107,7 @@ def test_nonzero_exit_is_returned_as_is(sb):
 def test_timeout_stops_the_command_and_the_next_one_works(sb):
     r = sb.run("sleep 1000", timeout=1)
     assert r.exit_code == 124
+    assert r.timed_out
     assert "timed out" in r.output
     assert "ok" in sb.run("echo ok").output
 

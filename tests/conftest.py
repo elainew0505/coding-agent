@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-IMAGE = "coding-agent:toy"  # built with: docker build -t coding-agent:toy .
+from coding_agent.config import IMAGE  # built with: docker build -t coding-agent:toy .
 
 
 def pytest_addoption(parser):
