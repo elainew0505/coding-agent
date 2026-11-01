@@ -55,7 +55,7 @@ The agent runs as root inside the container. That is fine here: with no mounts, 
 
 | ID | Requirement |
 | --- | --- |
-| L1 | Send the system prompt, full message history and the `run_command` schema on every call, as a streaming request (`client.messages.stream(...)` + `get_final_message()`) with `output_config.effort` set explicitly from `config.py` (default `medium`). Enable prompt caching so the unchanged prefix is reused each call; check the current docs for how (e.g. a `cache_control` breakpoint) when implementing |
+| L1 | All model calls go through one thin wrapper, `Model.query(messages)` in `model.py`; the loop never touches the SDK. Each call sends the system prompt, full message history and the `run_command` tool as a streaming request (`client.beta.messages.stream(...)` + `get_final_message()`, which avoids timeouts on long replies), with `output_config.effort` set explicitly (default `medium`), top-level `cache_control: {type: "ephemeral"}` so the growing history is cached, and `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) so a safety-classifier refusal is retried on Anthropic's recommended fallback model. `eager_input_streaming` is off: the tool's input is one short command, and leaving it off keeps the server's input validation |
 | L2 | Append the full response content as the assistant message, then act on `stop_reason`. `tool_use`: run each tool call in order and send all the results, in the same order, in a single user message |
 | L3 | `end_turn`: the task is done; print the final text and go to review. Any other `stop_reason` (e.g. `max_tokens`, `refusal`) ends the task with a message naming it, then goes to review, even if the reply contains a tool call, since it may be cut off |
 | L4 | Stop after 50 model calls, tell the user the cap was hit, and still go to review |
@@ -101,7 +101,7 @@ Known limitation: PID 1 is `sleep`, which never reaps orphaned processes, so kil
 
 ## Output
 
-- Stream Claude's text as it arrives; print each command as `$ <command>` with the first 5 lines of output
+- Print each command as `$ <command>` with the first 5 lines of its output, and Claude's text when a reply arrives (text isn't streamed token by token: on Opus 5.5 the notes between tool calls come back as hidden thinking, so there would be little to show)
 - At the end, print the stop reason and token usage (input and output)
 
 ## System prompt
@@ -128,6 +128,7 @@ Dockerfile        # agent image
 src/coding_agent/
   __main__.py     # entry point for the `coding-agent` command
   agent.py        # agent loop, review prompt, trajectory
+  model.py        # Model.query: the one place that calls the Anthropic API
   sandbox.py      # start, copy_in, exec, diff, cleanup
   tools.py        # RunCommandInput, input_schema constant, handler
   prompts.py      # system prompt, tool description

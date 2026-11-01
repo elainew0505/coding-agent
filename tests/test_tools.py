@@ -88,7 +88,7 @@ def test_input_schema_agrees_with_the_model():
 def test_tool_definition_shape():
     assert TOOL["name"] == "run_command"
     assert TOOL["input_schema"] is INPUT_SCHEMA
-    assert TOOL["description"].strip()
+    assert TOOL.get("description", "").strip()
 
 
 # --- run by hand -------------------------------------------------------------

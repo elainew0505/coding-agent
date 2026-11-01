@@ -7,6 +7,7 @@ sandbox, and hand back text for the tool_result block.
 
 from dataclasses import dataclass
 
+from anthropic.types.beta import BetaToolParam
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from coding_agent.config import DEFAULT_TIMEOUT, MAX_TIMEOUT
@@ -51,7 +52,11 @@ INPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
-TOOL = {"name": "run_command", "description": TOOL_DESCRIPTION, "input_schema": INPUT_SCHEMA}
+TOOL: BetaToolParam = {
+    "name": "run_command",
+    "description": TOOL_DESCRIPTION,
+    "input_schema": INPUT_SCHEMA,
+}
 
 
 @dataclass

@@ -8,7 +8,7 @@ you point the agent at, so a repo can't change its own limits (SPEC.md Scope).
 # --- model (L1, L6) ----------------------------------------------------------
 MODEL = "claude-opus-5-5"
 EFFORT = "medium"  # output_config.effort; set explicitly on every request
-MAX_TOKENS = 32_000  # per reply
+MAX_TOKENS = 64_000  # per reply; needs streaming (L1)
 MAX_RETRIES = 3  # SDK retries on API errors (its default is 2)
 
 # --- loop limits (L4, L5) ----------------------------------------------------

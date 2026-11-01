@@ -78,20 +78,19 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 ## Task 4: Agent loop
 
-**Description:** `prompts.py` (system prompt) and the loop in `agent.py`, implementing L1–L9 with an injected client and sandbox. Check current API docs for streaming, effort and prompt caching first.
+**Description:** `prompts.py` (system prompt), the thin model wrapper in `model.py` (L1), and the loop in `agent.py` (L2–L9), which only calls `Model.query` and takes an injected model and sandbox. Check current API docs for streaming, effort and prompt caching first.
 
 **Acceptance criteria:**
-- [ ] Unit tests with a fake client (replies built as `anthropic.types.Message`) cover: tool use then `end_turn`; `max_tokens` with a cut-off tool call stops without running it; the 50-call cap; the context backstop; API error; Ctrl+C during a command and during streaming
-- [ ] Every request has byte-identical `system` and `tools`; all tool results for a turn are in one user message
-- [ ] One recorded reply in `tests/fixtures/` loads as a `Message`
+- [x] Unit tests with a fake client (replies built as `anthropic.types.Message`) cover: tool use then `end_turn`; `max_tokens` with a cut-off tool call stops without running it; the 50-call cap; the context backstop; API error; Ctrl+C during a command and during streaming
+- [x] Every request has byte-identical `system` and `tools`; all tool results for a turn are in one user message
 
 **Verification:**
-- [ ] Tests pass: `uv run pytest tests/test_agent.py`
-- [ ] All checks pass
+- [x] Tests pass: `uv run pytest tests/test_agent.py`
+- [x] All checks pass
 
 **Dependencies:** Task 3
 
-**Files likely touched:** `src/coding_agent/prompts.py`, `src/coding_agent/agent.py`, `tests/fakes.py`, `tests/test_agent.py`, `tests/fixtures/`
+**Files likely touched:** `src/coding_agent/prompts.py`, `src/coding_agent/model.py`, `src/coding_agent/agent.py`, `tests/fakes.py`, `tests/test_agent.py`
 
 **Estimated scope:** Medium
 
@@ -130,6 +129,7 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 **Acceptance criteria:**
 - [ ] `uv run pytest` skips the live tests; `uv run pytest --live` runs them (user only)
+- [ ] A live run saves one real reply to `tests/fixtures/`, and a unit test loads it as a `BetaMessage` (catches drift between the fake replies and the real SDK)
 - [ ] README says: build the image, install, run, add `.agent/` to `.gitignore`, keep Docker Desktop's disk limit below your free space, read the whole diff before applying
 
 **Verification:**

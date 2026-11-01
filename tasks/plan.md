@@ -40,10 +40,10 @@ sandbox.py (S, D helpers)       ← exists; tested first
 
 ### Phase B: The loop
 - [x] Task 3: `run_command` tool and config
-- [ ] Task 4: Agent loop
+- [x] Task 4: Agent loop and model wrapper
 
 ### Checkpoint B
-- [ ] Unit tests cover L1–L9 with the fake client
+- [x] Unit tests cover L1–L9 with the fake model and fake client
 - [ ] Review with the user
 
 ### Phase C: End to end
@@ -61,9 +61,8 @@ sandbox.py (S, D helpers)       ← exists; tested first
 | Docker behaviour differs between Docker Desktop on macOS and Linux (tar flavour, process handling) | High | Task 2 runs every sandbox rule against a real container before anything builds on it |
 | `docker exec` doesn't return while a background process holds its output open | Med | A Docker test with `sleep 1000 &`; if it hangs, redirect or kill in `run` |
 | Claude edits files poorly through bash alone | Med | Live task tests in Task 6; a structured `edit_file` tool is Phase 1 if needed |
-| API details (effort, caching, streaming) differ from what the spec assumes | Med | Check current docs (`source-driven-development`) in Task 4 |
+| API details (effort, caching, streaming) differ from what the spec assumes | Med | Checked against the current docs in Task 4; the first live run (Task 6) confirms them for real |
 
 ## Open questions
 
-- Prompt caching: which mechanism the current API recommends (decided in Task 4 from the docs)
 - The three safety additions (flag deletions and auto-run files, strip control characters, cap the diff) are not yet in the spec
