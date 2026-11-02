@@ -6,7 +6,7 @@ you point the agent at, so a repo can't change its own limits (SPEC.md Scope).
 """
 
 # --- model (L1, L6) ----------------------------------------------------------
-MODEL = "claude-opus-5-5"
+MODEL = "claude-haiku-5-5"  # the cheapest; pass --model claude-opus-5-5 for the strongest
 EFFORT = "medium"  # output_config.effort; set explicitly on every request
 MAX_TOKENS = 64_000  # per reply; needs streaming (L1)
 MAX_RETRIES = 3  # SDK retries on API errors (its default is 2)

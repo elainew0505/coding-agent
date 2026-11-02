@@ -153,7 +153,7 @@ def review(diff, root, ask=None, out=print):
 # --- trajectory (§ Trajectory) -----------------------------------------------
 
 
-def write_trajectory(root, task, run, outcome):
+def write_trajectory(root, task, run, outcome, model=MODEL):
     """Save the run to .agent/trajectories/<timestamp>.json and return the path.
 
     Holds the request settings, every message and the result. Never the API
@@ -163,7 +163,7 @@ def write_trajectory(root, task, run, outcome):
     path = _agent_file(root, "trajectories", "json")
     data = {
         "task": task,
-        "model": MODEL,
+        "model": model,
         "system": SYSTEM_PROMPT,
         "tools": [TOOL],
         "messages": run.messages,

@@ -132,6 +132,12 @@ def test_usage_error_without_a_task(capsys):
     assert "usage" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("argv", [["--model"], ["--model", "claude-opus-5-5"], ["--verbose", "x"]])
+def test_usage_error_for_a_bad_command_line(argv, capsys):
+    assert main(argv) == 2
+    assert "usage" in capsys.readouterr().err
+
+
 def test_outside_a_repo_is_an_error(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert main(["fix it"]) == 1
@@ -150,6 +156,7 @@ def test_end_to_end_with_a_scripted_model(image, repo, monkeypatch):
     [trajectory] = (repo / ".agent" / "trajectories").iterdir()
     data = json.loads(trajectory.read_text())
     assert (data["stop_reason"], data["outcome"]) == ("done", "applied")
+    assert data["model"] == "claude-haiku-5-5"  # the default
     left = subprocess.run(
         ["docker", "ps", "-aq", "--filter", f"label={LABEL}"],
         capture_output=True,

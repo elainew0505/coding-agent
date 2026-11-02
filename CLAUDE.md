@@ -29,8 +29,8 @@ uv run pyright
 
 ## Claude API conventions
 
-- Default model `claude-opus-5-5`; set `output_config.effort` explicitly (its default is `medium`). Model IDs are exact strings — never add date suffixes.
-- Every model call goes through `Model.query()` in `model.py`. It streams (`client.beta.messages.stream(...)` + `get_final_message()`), because long turns otherwise hit timeouts, and opts into `fallbacks: "default"`.
+- Default model `claude-haiku-5-5` (the cheapest, `config.MODEL`); `coding-agent --model claude-opus-5-5` uses the strongest. Set `output_config.effort` explicitly (both default to `medium`). Model IDs are exact strings — never add date suffixes.
+- Every model call goes through `Model.query()` in `model.py`. It streams (`client.beta.messages.stream(...)` + `get_final_message()`), because long turns otherwise hit timeouts, and opts into `fallbacks: "default"` only for models that support it (not Haiku 5.5).
 - History is append-only: append the full `response.content` each turn, never edit or delete earlier turns.
 - Keep `system` and `tools` byte-identical across turns so prompt caching hits; put anything that varies (timestamps, paths) in messages.
 - One custom tool, `run_command`, with an explicit `input_schema`; each call runs in a fresh shell (no state carries over), as in mini-swe-agent. Don't use the Anthropic-defined `bash` tool: its contract is a persistent session.

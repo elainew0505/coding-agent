@@ -1,7 +1,10 @@
 """
 __main__.py - the coding-agent command (SPEC.md § How a run works).
 
-  coding-agent "<task>"        (or: python -m coding_agent "<task>")
+  coding-agent [--model ID] "<task>"        (or: python -m coding_agent ...)
+
+The model defaults to config.MODEL (Claude Haiku 5.5, the cheapest); pass
+--model claude-opus-5-5 for the strongest.
 
 Run it anywhere inside a git repo. Steps: find the repo's top folder, start
 the sandbox, copy the repo in, take a baseline, run the loop, review the
@@ -11,11 +14,11 @@ diff, save the trajectory, remove the container.
 import sys
 
 from coding_agent.agent import review, run_task, write_trajectory
-from coding_agent.config import IMAGE
+from coding_agent.config import IMAGE, MODEL
 from coding_agent.model import Model
 from coding_agent.sandbox import Sandbox, SandboxError, find_repo_root
 
-USAGE = 'usage: coding-agent "<task>"   (run inside a git repo)'
+USAGE = 'usage: coding-agent [--model ID] "<task>"   (run inside a git repo)'
 
 
 def main(argv=None, model=None, image=IMAGE):
@@ -24,7 +27,10 @@ def main(argv=None, model=None, image=IMAGE):
     `model` and `image` are only swapped out by tests.
     """
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 1 or not args[0].strip():
+    model_name = MODEL
+    if len(args) >= 2 and args[0] == "--model":
+        model_name, args = args[1], args[2:]
+    if len(args) != 1 or not args[0].strip() or args[0].startswith("-"):
         print(USAGE, file=sys.stderr)
         return 2
     task = args[0]
@@ -44,7 +50,8 @@ def main(argv=None, model=None, image=IMAGE):
             if report.skipped_secret:
                 print(f"Not copied (secrets or .agent/): {', '.join(report.skipped_secret)}")
 
-            run = run_task(task, model or Model(), sandbox)
+            print(f"Model: {model_name}")
+            run = run_task(task, model or Model(model_name), sandbox)
             if run.detail:
                 print(run.detail)
             outcome = review(sandbox.diff(), root)  # D6: every run ends in review
@@ -54,7 +61,7 @@ def main(argv=None, model=None, image=IMAGE):
     except KeyboardInterrupt:  # outside the loop (copy-in, diff): nothing to review
         print("\nStopped.")
     finally:
-        path = write_trajectory(root, task, run, outcome)
+        path = write_trajectory(root, task, run, outcome, model_name)
         if run:
             print(
                 f"Stop: {run.stop_reason} · {run.calls} model calls · "

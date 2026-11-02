@@ -19,7 +19,7 @@ import pytest
 
 from coding_agent.agent import run_task
 from coding_agent.config import CONTEXT_THRESHOLD, MAX_CALLS
-from coding_agent.model import FALLBACK_BETA, Model
+from coding_agent.model import FALLBACK_BETA, FALLBACK_MODELS, Model
 from coding_agent.prompts import SYSTEM_PROMPT
 from coding_agent.sandbox import CommandResult
 from coding_agent.tools import TOOL
@@ -139,7 +139,7 @@ def test_prints_commands_and_text():
 
 def test_every_request_has_the_same_system_and_tools():
     client = FakeClient(reply("ls"), reply(text="Done."))
-    model = Model(client)
+    model = Model(client=client)
     model.query([{"role": "user", "content": "a"}])
     model.query([{"role": "user", "content": "b"}])
     first, second = client.requests
@@ -147,21 +147,34 @@ def test_every_request_has_the_same_system_and_tools():
     assert first["tools"] == second["tools"] == [TOOL]
 
 
-def test_request_settings():
+def test_default_model_is_haiku_without_a_fallback():
     client = FakeClient(reply(text="Done."))
-    Model(client).query([{"role": "user", "content": "a"}])
+    Model(client=client).query([{"role": "user", "content": "a"}])
     request = client.requests[0]
-    assert request["model"] == "claude-opus-5-5"
+    assert request["model"] == "claude-haiku-5-5"
     assert request["output_config"] == {"effort": "medium"}
     assert request["cache_control"] == {"type": "ephemeral"}
+    assert "fallbacks" not in request and "betas" not in request  # Haiku 5.5 has none
+    assert "temperature" not in request and "tool_choice" not in request
+
+
+def test_opus_can_be_passed_in_and_gets_the_fallback():
+    client = FakeClient(reply(text="Done."))
+    Model("claude-opus-5-5", client=client).query([{"role": "user", "content": "a"}])
+    request = client.requests[0]
+    assert request["model"] == "claude-opus-5-5"
     assert request["fallbacks"] == "default"
     assert request["betas"] == [FALLBACK_BETA]
-    assert "temperature" not in request and "tool_choice" not in request
+
+
+def test_only_known_models_get_the_fallback():
+    assert "claude-haiku-5-5" not in FALLBACK_MODELS
+    assert "claude-opus-5-5" in FALLBACK_MODELS
 
 
 def test_query_returns_the_final_message():
     message = reply(text="Done.")
-    assert Model(FakeClient(message)).query([]) is message
+    assert Model(client=FakeClient(message)).query([]) is message
 
 
 # --- run by hand -------------------------------------------------------------
