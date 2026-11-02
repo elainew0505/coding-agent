@@ -40,7 +40,7 @@ coding-agent --model claude-opus-5-5 "Refactor the parser and keep the tests pas
 
 - **Model:** Claude Haiku 5.5 (`claude-haiku-5-5`) by default, the cheapest. Pass `--model claude-opus-5-5` for the strongest; it's about 40 times the price, and it retries a safety-classifier refusal on a fallback model, which Haiku can't.
 - **While it works** you see each command as `$ <command>` with a few lines of output, and Claude's messages.
-- **At the end** you see a summary of the changed files, then the full diff, then `[a]pply / [d]iscard?`. Only `a` applies; anything else, Ctrl+C or Ctrl+D discards. If the diff no longer applies (you changed the same lines meanwhile), the patch is saved to `.agent/patches/` instead.
+- **At the end** you see a summary of the changed files, then the full diff, then `[a]pply / [d]iscard?`. `a` applies; `d`, Ctrl+C or Ctrl+D discards; anything else asks again. Control characters in the diff (which could hide lines on screen) are shown as escapes like `\x1b`. If the diff no longer applies (you changed the same lines meanwhile), the patch is saved to `.agent/patches/` instead.
 - **Ctrl+C** during the task stops it and still takes you to the review, so partial work isn't lost.
 - **Limits:** 50 model calls, a 60-second default per command (300 at most), and a context backstop. All settings are in [`src/coding_agent/config.py`](src/coding_agent/config.py).
 - **Every run** is saved as JSON in `.agent/trajectories/`: the task, every message and command, token usage and the outcome.

@@ -43,11 +43,11 @@ The container is the safety boundary: nothing inside it can reach your files, yo
 | S2 | Start with `docker run -d --name agent-<id> --label coding-agent=1 --network none --memory 2g --cpus 2 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges <image> sleep infinity` |
 | S3 | No volume mounts, no Docker socket, no `-e` secrets; the API key stays in the host Python process |
 | S4 | Copy in with a tar stream. List files with `git ls-files -z --cached --others --exclude-standard`, drop paths that no longer exist on disk and paths matching S9, then `COPYFILE_DISABLE=1 tar -c --no-xattrs --null --no-recursion -T - \| docker exec -i agent-<id> tar -x --no-same-owner -C /workspace`. `COPYFILE_DISABLE=1` and `--no-xattrs` stop macOS tar adding `._*` files and Apple attributes. `--no-same-owner` is required: without it, tar as root tries to keep your uid, `--cap-drop ALL` forbids that, and tar exits 2 |
-| S5 | Baseline inside the container: `git init`, `git add -A`, `git -c user.name=agent -c user.email=agent@local commit -m baseline`; store the commit SHA. Every harness git command runs as `git --git-dir=/harness.git --work-tree=/workspace …`, so there is no `.git` in the workspace for the model to delete, commit to or rewrite |
+| S5 | Baseline inside the container: `git init`, `git add -A --force` (everything in `/workspace` was chosen by S4, including files the repo tracks despite `.gitignore`, so their later edits are diffed too), `git -c user.name=agent -c user.email=agent@local commit -m baseline`; store the commit SHA. Every harness git command runs as `git --git-dir=/harness.git --work-tree=/workspace …`, so there is no `.git` in the workspace for the model to delete, commit to or rewrite |
 | S6 | Remove the container with `docker rm -f agent-<id>` in a `try/finally` and an `atexit` hook |
 | S7 | On startup, remove leftover containers only if they carry the `coding-agent=1` label, never by name pattern or `docker ps` alone |
-| S8 | Fail fast with a clear message if Docker isn't running, the image is missing, or the current folder isn't a git repo |
-| S9 | Never copy: anything under `.agent/`, or a file whose name matches `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ecdsa*` or `id_ed25519*`, even if git tracks it. The list lives in `config.py`. Anything copied in can be read by the model and so sent to the API and written to the trajectory |
+| S8 | Fail fast with a clear message, before starting a container, if Docker isn't running, the image is missing, the current folder isn't a git repo, or neither `ANTHROPIC_API_KEY` nor `ANTHROPIC_AUTH_TOKEN` is set |
+| S9 | Never copy: anything under `.agent/`, or a file whose name matches `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ecdsa*` or `id_ed25519*` (case-insensitive: macOS treats `Server.PEM` and `server.pem` as the same file), even if git tracks it. The list lives in `config.py`. Anything copied in can be read by the model and so sent to the API and written to the trajectory |
 
 The agent runs as root inside the container. That is fine here: with no mounts, root inside cannot create root-owned files or stray `.git` folders on your machine. `--cap-drop ALL` and `no-new-privileges` still take away root's extra kernel permissions, which nothing the agent does needs, so a container escape is harder if one exists.
 
@@ -60,7 +60,7 @@ The agent runs as root inside the container. That is fine here: with no mounts, 
 | L3 | `end_turn`: the task is done; print the final text and go to review. Any other `stop_reason` (e.g. `max_tokens`, `refusal`) ends the task with a message naming it, then goes to review, even if the reply contains a tool call, since it may be cut off |
 | L4 | Stop after 50 model calls, tell the user the cap was hit, and still go to review |
 | L5 | Context backstop: after each response, total its input tokens from `usage` (`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`; with caching on, `input_tokens` alone leaves out the cached part). Above 150,000, finish that response's tool calls, say the context is full, and go to review |
-| L6 | On an API error, rely on the SDK's built-in retries (`max_retries=3`, set explicitly; the SDK default is 2), then end the task with the error and go to review. The same if the model can't be called at all: with no credentials, the SDK raises `TypeError` on the first call rather than an API error |
+| L6 | On an API error, rely on the SDK's built-in retries (`max_retries=3`, set explicitly; the SDK default is 2), then end the task with the error and go to review. A missing key is caught up front (S8). Any other exception is a bug: it is not caught, and the run crashes after the trajectory is written and the container removed |
 | L7 | Invalid tool input, timeouts and harness errors (e.g. `docker exec` failing) go back to the model as `is_error` tool results, never a crash. A non-zero exit code is a normal result, not an error: a failing test run is information, as in mini-swe-agent |
 | L8 | Ctrl+C stops the task: kill any running command (see below) and go to review. A reply that was still streaming is dropped |
 | L9 | Model name, effort, max tokens, call cap, context threshold and timeouts live in `config.py` |
@@ -95,14 +95,21 @@ Known limitation: PID 1 is `sleep`, which never reaps orphaned processes, so kil
 | D1 | When the task ends, run `git add -A && git diff --cached --binary <baseline>` in the container (with the S5 flags) |
 | D2 | Empty diff: say "no file changes" and skip the prompt |
 | D3 | Show a summary (`--stat`) first, then the full diff |
-| D4 | Ask `[a]pply / [d]iscard`; nothing is written to your repo before this answer. Ctrl+C or Ctrl+D at the prompt means discard |
+| D4 | Ask `[a]pply / [d]iscard`; nothing is written to your repo before this answer. Only `a`/`apply` applies and only `d`/`discard`, Ctrl+C or Ctrl+D discard; anything else asks again, so a typo can't throw the work away |
 | D5 | Apply: run `git apply --check` on the host, then `git apply`. If the check fails, write the patch to `.agent/patches/<timestamp>.patch` and say why, so the work isn't lost |
 | D6 | A stopped, capped or failed task still goes to review, so partial work is never lost silently |
+
+Known limitations, accepted for the MVP (none can change your repo without the review):
+
+- **Global ignore rules.** Copy-in (S4) also honours your global gitignore (`core.excludesFile`) and `.git/info/exclude`, but the container's harness git only sees the repo's `.gitignore`. Files the model creates that only your global rules ignore (e.g. a `.venv/`) show up in the diff; discard or ignore them in the repo's `.gitignore`.
+- **`/harness.git` is writable by the model.** It runs as root in the container, so it could delete the harness repo; the diff then fails and the run ends without a review. Your repo is unchanged; the run's work is lost.
+- **A dead container.** If the container stops mid-run, each later command reports Docker's error as an ordinary non-zero exit, so the model may spend calls retrying before the run ends; the diff then fails and there is nothing to review.
 
 ## Output
 
 - Print each command as `$ <command>` with the first 5 lines of its output, and Claude's text when a reply arrives (text isn't streamed token by token: on Opus 5.5 the notes between tool calls come back as hidden thinking, so there would be little to show)
 - At the end, print the stop reason and token usage (input and output)
+- Everything printed that came from the model or the sandbox (Claude's text, commands, output previews, the diff) shows control characters and bidi overrides as escapes (`\x1b`, `\u202e`). Printed raw, they could move the cursor or erase lines, so a file the model wrote could hide part of the diff you approve
 
 ## System prompt
 
@@ -116,7 +123,7 @@ A short, fixed text in `prompts.py` that tells the model:
 
 ## Trajectory
 
-- At the end of every run (in the same `finally` as S6), write one JSON file to `.agent/trajectories/<timestamp>.json` on the host: the task, system prompt, tool schema, full message history, total usage and stop reason
+- At the end of every run (in the same `finally` as S6), write one JSON file to `.agent/trajectories/<timestamp>.json` on the host: the task, system prompt, tool schema, full message history, total usage and stop reason. If the harness crashes mid-task, the history so far is still written, with stop reason `crashed`
 - Never write the API key
 
 ## Project layout

@@ -17,7 +17,7 @@ import anthropic
 import httpx2
 import pytest
 
-from coding_agent.agent import run_task
+from coding_agent.agent import Run, run_task
 from coding_agent.config import CONTEXT_THRESHOLD, MAX_CALLS
 from coding_agent.model import FALLBACK_BETA, FALLBACK_MODELS, Model
 from coding_agent.prompts import SYSTEM_PROMPT
@@ -34,7 +34,7 @@ def quiet(*_):
 def go(*replies, sandbox=None):
     model = FakeModel(*replies)
     sandbox = sandbox or FakeSandbox(CommandResult(0, "ok\n"))
-    return run_task("fix the bug", model, sandbox, out=quiet), model, sandbox
+    return run_task(Run.for_task("fix the bug"), model, sandbox, out=quiet), model, sandbox
 
 
 # --- the loop ----------------------------------------------------------------
@@ -100,11 +100,28 @@ def test_api_error_ends_the_task():
     assert run.calls == 1
 
 
-def test_model_call_failure_ends_the_task():
-    # e.g. no credentials: the SDK raises TypeError on the first call
-    run, _, _ = go(TypeError("Could not resolve authentication method"))
-    assert run.stop_reason == "model_error"
-    assert "authentication" in run.detail
+def test_a_bug_in_the_harness_is_not_swallowed():
+    # Only expected failures end the task quietly; anything else is a crash
+    # (main still writes the trajectory and removes the container).
+    with pytest.raises(TypeError):
+        go(TypeError("unexpected keyword argument"))
+
+
+def test_terminal_escapes_are_printed_visibly():
+    # Model text and command output are untrusted: an escape sequence could
+    # move the cursor and rewrite what the user sees.
+    printed = []
+    sandbox = FakeSandbox(CommandResult(0, "ok\x1b[2K\n"))
+    run_task(
+        Run.for_task("t"),
+        FakeModel(reply("ls", text="hi\x1b[1A"), reply(text="done")),
+        sandbox,
+        printed.append,
+    )
+    text = "\n".join(printed)
+    assert "\x1b" not in text
+    assert "hi\\x1b[1A" in text
+    assert "ok\\x1b[2K" in text
 
 
 def test_ctrl_c_while_a_reply_streams_drops_it():
@@ -126,7 +143,7 @@ def test_usage_counts_cached_input():
 def test_prints_commands_and_text():
     printed = []
     run_task(
-        "t",
+        Run.for_task("t"),
         FakeModel(reply("ls", text="Looking."), reply(text="Done.")),
         FakeSandbox(CommandResult(0, "a\nb\n")),
         out=printed.append,

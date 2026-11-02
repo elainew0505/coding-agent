@@ -2,7 +2,7 @@
 
 A coding agent written in Python: a CLI that takes a task, calls Claude through the Anthropic API in a tool-use loop, and edits files and runs commands in a sandboxed workspace.
 
-Status: no code yet. Start from a spec (`spec-driven-development` skill) before writing any.
+Status: MVP built (`SPEC.md`); `tasks/todo.md` has what's left. Change the spec before changing behaviour.
 
 ## Stack
 

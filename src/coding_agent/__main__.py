@@ -11,9 +11,10 @@ the sandbox, copy the repo in, take a baseline, run the loop, review the
 diff, save the trajectory, remove the container.
 """
 
+import os
 import sys
 
-from coding_agent.agent import review, run_task, write_trajectory
+from coding_agent.agent import Run, review, run_task, write_trajectory
 from coding_agent.config import IMAGE, MODEL
 from coding_agent.model import Model
 from coding_agent.sandbox import Sandbox, SandboxError, find_repo_root
@@ -40,6 +41,13 @@ def main(argv=None, model=None, image=IMAGE):
     except SandboxError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    # S8: fail before starting Docker. Only checks that a key is set; the SDK
+    # reads it from the environment and it goes nowhere else.
+    if model is None and not (
+        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ):
+        print("Error: set ANTHROPIC_API_KEY to your Anthropic API key.", file=sys.stderr)
+        return 1
 
     run, outcome, code = None, "not reviewed", 0
     try:
@@ -51,7 +59,8 @@ def main(argv=None, model=None, image=IMAGE):
                 print(f"Not copied (secrets or .agent/): {', '.join(report.skipped_secret)}")
 
             print(f"Model: {model_name}")
-            run = run_task(task, model or Model(model_name), sandbox)
+            run = Run.for_task(task)  # held here, so a crash still leaves its history
+            run_task(run, model or Model(model_name), sandbox)
             if run.detail:
                 print(run.detail)
             outcome = review(sandbox.diff(), root)  # D6: every run ends in review

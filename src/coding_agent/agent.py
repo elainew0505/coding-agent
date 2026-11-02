@@ -21,6 +21,18 @@ from coding_agent.tools import TOOL, ToolResult, run_command
 
 PREVIEW_LINES = 5  # lines of each command's output shown to the user (§ Output)
 
+# Control characters (except newline and tab) and bidi overrides, shown as
+# escapes. Printed raw, they can move the cursor, erase lines or reorder text,
+# so a file the model wrote could hide part of the diff you're approving.
+_C0_C1 = [*range(0x09), *range(0x0B, 0x20), *range(0x7F, 0xA0)]
+_BIDI = [*range(0x202A, 0x202F), *range(0x2066, 0x206A)]
+_HIDDEN = {c: f"\\x{c:02x}" for c in _C0_C1} | {c: f"\\u{c:04x}" for c in _BIDI}
+
+
+def visible(text):
+    """`text` safe to print to a terminal: control characters become escapes."""
+    return text.translate(_HIDDEN)
+
 
 @dataclass
 class Run:
@@ -29,6 +41,10 @@ class Run:
     detail: str = ""  # a human-readable line about why it stopped, if not "done"
     calls: int = 0
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
+
+    @classmethod
+    def for_task(cls, task):
+        return cls(messages=[{"role": "user", "content": task}])
 
 
 def input_tokens(usage):
@@ -41,14 +57,14 @@ def input_tokens(usage):
     )
 
 
-def run_task(task, model, sandbox, out=print):
-    """Work on `task` until the model stops or a limit is hit. Returns a Run.
+def run_task(run, model, sandbox, out=print):
+    """Work on the task in `run` (from Run.for_task) until the model stops or
+    a limit is hit. Returns the same Run, which is updated as it goes, so the
+    caller still has the history if something unexpected crashes.
 
     Never raises for API errors or Ctrl+C: both end the task, and the caller
     goes to review either way (D6).
     """
-    run = Run(messages=[{"role": "user", "content": task}])
-
     while run.calls < MAX_CALLS:  # L4
         try:
             reply = model.query(run.messages)
@@ -56,10 +72,6 @@ def run_task(task, model, sandbox, out=print):
             return _stop(run, "interrupted", "Stopped by Ctrl+C.")
         except anthropic.APIError as e:  # L6: after the SDK's own retries
             return _stop(run, "api_error", f"API error: {e}")
-        except (
-            TypeError
-        ) as e:  # no credentials: the SDK raises this on the first call, not an APIError
-            return _stop(run, "model_error", f"Could not call the model: {e}")
 
         run.calls += 1
         run.usage["input_tokens"] += input_tokens(reply.usage)
@@ -68,7 +80,7 @@ def run_task(task, model, sandbox, out=print):
 
         for block in reply.content:
             if block.type == "text" and block.text.strip():
-                out(block.text)
+                out(visible(block.text))
 
         if reply.stop_reason == "end_turn":  # L3
             return _stop(run, "done")
@@ -95,7 +107,7 @@ def _run_tool(block, sandbox, out):
     """Run one tool_use block and turn the outcome into a tool_result block."""
     if block.name == "run_command":
         command = block.input.get("command", "") if isinstance(block.input, dict) else ""
-        out(f"$ {command}")
+        out(visible(f"$ {command}"))
         result = run_command(block.input, sandbox)
     else:
         result = ToolResult(f"Unknown tool: {block.name}", is_error=True)
@@ -103,7 +115,7 @@ def _run_tool(block, sandbox, out):
     if lines and lines[0].startswith("exit_code:"):
         lines = lines[1:]
     if lines[:PREVIEW_LINES]:
-        out("\n".join(lines[:PREVIEW_LINES]))
+        out(visible("\n".join(lines[:PREVIEW_LINES])))
     return {
         "type": "tool_result",
         "tool_use_id": block.id,
@@ -131,13 +143,17 @@ def review(diff, root, ask=None, out=print):
     if diff.empty:  # D2
         out("No file changes.")
         return "no changes"
-    out(diff.stat)  # D3: summary first, then the full diff
-    out(diff.patch.decode(errors="replace"))
-    try:
-        answer = ask("[a]pply / [d]iscard? ").strip().lower()
-    except (KeyboardInterrupt, EOFError):  # D4: Ctrl+C or Ctrl+D means discard
-        answer = "d"
-    if answer not in ("a", "apply"):
+    out(visible(diff.stat))  # D3: summary first, then the full diff
+    out(visible(diff.patch.decode(errors="replace")))
+    while True:
+        try:
+            answer = ask("[a]pply / [d]iscard? ").strip().lower()
+        except (KeyboardInterrupt, EOFError):  # D4: Ctrl+C or Ctrl+D means discard
+            answer = "d"
+        if answer in ("a", "apply", "d", "discard"):
+            break
+        out("Type a to apply or d to discard.")  # D4: a typo must not lose the work
+    if answer in ("d", "discard"):
         out("Discarded. Your repo is unchanged.")
         return "discarded"
     ok, message = apply_patch(root, diff.patch)  # D5: checks first, then applies
@@ -167,7 +183,7 @@ def write_trajectory(root, task, run, outcome, model=MODEL):
         "system": SYSTEM_PROMPT,
         "tools": [TOOL],
         "messages": run.messages,
-        "stop_reason": run.stop_reason,
+        "stop_reason": run.stop_reason or "crashed",  # run_task always sets one when it returns
         "detail": run.detail,
         "calls": run.calls,
         "usage": run.usage,

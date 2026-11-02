@@ -41,10 +41,12 @@ def fix_patch(repo):
     return Diff(patch=patch, stat=" app.py | 2 +-\n")
 
 
-def answering(answer):
-    """An `ask` that returns `answer`, or raises it if it's an exception."""
+def answering(*answers):
+    """An `ask` that gives `answers` in order, raising any that are exceptions."""
+    remaining = list(answers)
 
     def ask(_prompt):
+        answer = remaining.pop(0)
         if isinstance(answer, BaseException):
             raise answer
         return answer
@@ -87,10 +89,18 @@ def test_review_apply_writes_the_change(repo):
     assert (repo / "app.py").read_text() == FIXED
 
 
-@pytest.mark.parametrize("answer", ["d", "", "yes", EOFError(), KeyboardInterrupt()])
-def test_review_anything_but_apply_discards(repo, answer):
+@pytest.mark.parametrize("answer", ["d", "discard", " D ", EOFError(), KeyboardInterrupt()])
+def test_review_discards_on_d_ctrl_c_or_ctrl_d(repo, answer):
     assert review(fix_patch(repo), repo, ask=answering(answer), out=quiet) == "discarded"
     assert (repo / "app.py").read_text() == BROKEN
+
+
+def test_review_asks_again_on_anything_else(repo):
+    # A typo or a natural "y" must not throw away the whole run's work.
+    printed = []
+    ask = answering("y", "", "yes", "a")
+    assert review(fix_patch(repo), repo, ask=ask, out=printed.append) == "applied"
+    assert printed.count("Type a to apply or d to discard.") == 3
 
 
 def test_review_shows_the_stat_then_the_diff(repo):
@@ -98,6 +108,15 @@ def test_review_shows_the_stat_then_the_diff(repo):
     review(fix_patch(repo), repo, ask=answering("d"), out=printed.append)
     assert printed[0] == " app.py | 2 +-\n"
     assert "+    return a + b" in printed[1]
+
+
+def test_review_shows_terminal_escapes_in_the_diff_visibly(repo):
+    # An escape sequence in a changed file could erase lines of the diff on screen.
+    printed = []
+    patch = b"+evil()\x1b[1A\x1b[2K\n"
+    review(Diff(patch, " x | 1 +\n"), repo, ask=answering("d"), out=printed.append)
+    assert "\x1b" not in printed[1]
+    assert "evil()\\x1b[1A\\x1b[2K" in printed[1]
 
 
 def test_failed_apply_saves_the_patch(repo):
@@ -160,6 +179,20 @@ def test_outside_a_repo_is_an_error(tmp_path, monkeypatch, capsys):
     assert "not inside a git repo" in capsys.readouterr().err
 
 
+def test_missing_api_key_fails_before_docker_starts(repo, monkeypatch, capsys):
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+
+    def no_docker(*_args):
+        raise AssertionError("started a container")
+
+    monkeypatch.setattr("coding_agent.__main__.Sandbox", no_docker)
+    assert main(["fix it"]) == 1
+    assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+    assert not (repo / ".agent" / "trajectories").exists()  # nothing ran, nothing to save
+
+
 def test_end_to_end_with_a_scripted_model(image, repo, monkeypatch):
     """The whole command, run from a subfolder, with a fake model playing Claude."""
     monkeypatch.chdir(repo / "sub")
@@ -188,7 +221,7 @@ def test_ctrl_c_mid_task_still_reviews_and_cleans_up(image, repo, monkeypatch):
     assert no_containers_left()
 
 
-def test_crash_mid_task_still_cleans_up(image, repo, monkeypatch):
+def test_crash_mid_task_still_cleans_up_and_keeps_the_history(image, repo, monkeypatch):
     monkeypatch.chdir(repo)
     model = FakeModel(reply("ls"), RuntimeError("bug in the harness"))
 
@@ -196,7 +229,9 @@ def test_crash_mid_task_still_cleans_up(image, repo, monkeypatch):
         main(["fix add"], model=model, image=image)
 
     assert (repo / "app.py").read_text() == BROKEN
-    assert only_trajectory(repo)["outcome"] == "not reviewed"
+    data = only_trajectory(repo)
+    assert (data["stop_reason"], data["outcome"]) == ("crashed", "not reviewed")
+    assert len(data["messages"]) == 3  # task, the ls call, its result: what to debug from
     assert no_containers_left()
 
 
