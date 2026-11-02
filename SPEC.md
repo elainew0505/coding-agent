@@ -17,7 +17,7 @@ The design follows [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
 
 **Out of scope (later phases)**
 
-- Benchmark suite, structured `edit_file` tool if bash edits prove unreliable (Phase 1)
+- Benchmark suite (Phase 1, see [SPEC-Phase1.md](SPEC-Phase1.md)); a structured `edit_file` tool only if the first eval runs show bash edits failing
 - Follow-up tasks in one session (a REPL), todo lists, project instruction files, history summaries (Phase 2)
 - Git branch and commit on your repo, network access per command, auto-approve rules (Phase 3). Until there's network, the agent image only has the toy repo's dependencies (S1)
 - MCP, sub-agents, session resume, TUI (Phase 4)
