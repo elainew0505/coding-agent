@@ -1,6 +1,6 @@
-# Tasks: coding-agent MVP
+# Tasks: Phase 1, evaluation
 
-Plan: [plan.md](plan.md). Spec: [SPEC.md](../SPEC.md). Every task also meets the Definition of Done (`.claude/references/definition-of-done.md`) and updates docs in the same commit.
+Plan: [plan.md](plan.md). Spec: [SPEC-Phase1.md](../SPEC-Phase1.md). Every task also meets the Definition of Done (`.claude/references/definition-of-done.md`) and updates docs in the same commit. Phase 0's tasks are in [archive/](archive/).
 
 **All checks:**
 
@@ -8,44 +8,92 @@ Plan: [plan.md](plan.md). Spec: [SPEC.md](../SPEC.md). Every task also meets the
 uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --check .
 ```
 
+Tasks marked **(user)** cost money or need a rented machine: only the user runs them, never an agent.
+
 ---
 
-## Task 1: uv project and the sandbox module
+## Task 1: The `eval` extra and the dataset loader
 
-**Description:** Create the `uv` project and move `src/sandbox.py` into the package layout from `SPEC.md` § Project layout. Pin the Dockerfile's base image by digest (S1). Remove leftover `__pycache__` folders from the old implementation.
+**Description:** Add `swebench` and `datasets` as an optional `eval` extra, after the `security-and-hardening` supply-chain check. Add `eval/dataset.py`: load `MariusHobbhahn/swe-bench-verified-mini`, split `test`, at a pinned revision (E1), and drop the tasks in `evals/exclusions.txt`. Only `coding_agent.eval` imports the new packages.
 
 **Acceptance criteria:**
-- [x] `uv sync` installs from a committed `uv.lock`; runtime deps are `anthropic` and `pydantic` only
-- [x] `src/coding_agent/sandbox.py` exists; `python -m coding_agent.sandbox` still runs the demo
-- [x] `Dockerfile` starts `FROM python:3.12-slim@sha256:…`
+- [ ] `uv sync` still installs only `anthropic` and `pydantic` at runtime; `uv sync --extra eval` adds both, pinned in `uv.lock`
+- [ ] The loader returns 50 tasks at the pinned revision, minus the exclusions; `--instances` and `--limit N` subsets work (unit test with a small fake dataset)
+- [ ] The exclusion file format is one `instance_id  # reason` per line; a line without a reason is an error
 
 **Verification:**
-- [x] All checks pass (no tests yet beyond collection)
-- [x] Manual check: `docker build -t coding-agent:toy .` succeeds
+- [ ] Tests pass: `uv run pytest tests/test_eval_dataset.py`
+- [ ] All checks pass
+- [ ] Supply-chain check written up in the commit message
 
 **Dependencies:** None
 
-**Files likely touched:** `pyproject.toml`, `uv.lock`, `src/coding_agent/__init__.py`, `src/coding_agent/sandbox.py`, `Dockerfile`
+**Files likely touched:** `pyproject.toml`, `uv.lock`, `CLAUDE.md` (§ Stack, § Commands), `src/coding_agent/eval/__init__.py`, `src/coding_agent/eval/dataset.py`, `evals/exclusions.txt`, `tests/test_eval_dataset.py`
 
 **Estimated scope:** Small
 
 ---
 
-## Task 2: Docker safety tests for the sandbox
+## Task 2: The gold check
 
-**Description:** Add `tests/conftest.py` (skip Docker tests when Docker isn't running; register `--live`) and Docker tests for every sandbox safety test in `SPEC.md` § Acceptance tests. Fix whatever they find in `sandbox.py`.
+**Description:** `eval/images.py` pulls each task's image on x86 or builds it with `--namespace ''` on Apple Silicon, reusing cached ones (E2). `eval/grade.py` runs the official harness and reads its per-task results. A gold-check command grades the dataset's own fixes (`--predictions_path gold`, E3) and writes every task that fails to build or resolve into `evals/exclusions.txt` with the reason (E3, E4). It needs no agent code and no model, so it finds image and grading problems first.
 
 **Acceptance criteria:**
-- [x] Tests for: no network, `; touch /tmp/pwned` never reaching the host, timeout (including background processes), output cap, Ctrl+C killing everything but PID 1, deny-listed and ignored files absent, `rm -rf /workspace` still diffable, subfolder run applying at the top folder, failed `git apply --check` leaving the repo unchanged, no labelled container left after exit
-- [x] Without Docker running, these tests are skipped, not failed
+- [ ] The gold check runs on the Mac and records the harness version
+- [ ] Every task either resolves or is in `evals/exclusions.txt` with a reason
+- [ ] `grade.py` maps the harness's results to resolved, unresolved, empty patch or error (unit test on a saved harness results file)
 
 **Verification:**
-- [x] Tests pass: `uv run pytest tests/test_sandbox.py` (or by hand: `uv run python tests/test_sandbox.py [name ...]`)
-- [x] All checks pass
+- [ ] Tests pass: `uv run pytest tests/test_eval_grade.py`
+- [ ] All checks pass
+- [ ] Manual check: the gold check on the Mac; the count of resolved tasks is noted in the commit
 
 **Dependencies:** Task 1
 
-**Files likely touched:** `tests/conftest.py`, `tests/test_sandbox.py`, `src/coding_agent/sandbox.py`
+**Files likely touched:** `src/coding_agent/eval/images.py`, `src/coding_agent/eval/grade.py`, `evals/exclusions.txt`, `tests/test_eval_grade.py`, `tests/fixtures/`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 3: Sandbox and model take their settings from the caller
+
+**Description:** The first half of the 0003 refactor, with no behaviour change. `Sandbox` takes its image, working folder, command prefix and limits (memory, default timeout) as one settings value instead of reading `WORKDIR` and `config` directly. `Model` takes its system prompt and tool instead of importing them. The MVP's values become the defaults, so `coding-agent "<task>"` works exactly as before.
+
+**Acceptance criteria:**
+- [ ] No `/workspace` left in `sandbox.py` or `model.py` outside the MVP's default settings
+- [ ] Every existing test passes without being edited
+- [ ] A unit test builds a Sandbox with another working folder and checks `docker exec -w` and the lockdown flags use it
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest` (Docker running)
+- [ ] All checks pass
+
+**Dependencies:** None
+
+**Files likely touched:** `src/coding_agent/sandbox.py`, `src/coding_agent/model.py`, `src/coding_agent/config.py`, `tests/test_sandbox.py`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 4: `modes.py`: the MVP as CopyInSetup and ReviewAndApply
+
+**Description:** The second half of the refactor. `modes.py` defines the Setup interface (provides the M1–M7 values, then gets the code in and takes the baseline) and the Finish interface (takes the diff and the stop reason). CopyInSetup wraps today's copy-in and S5 baseline; ReviewAndApply wraps today's review, apply and trajectory path. `__main__.main()` runs Setup → `run_task` → Finish.
+
+**Acceptance criteria:**
+- [ ] Every existing test passes without being edited, including `test_main.py`
+- [ ] `__main__.py` no longer calls `copy_in`, `baseline` or `review` directly
+- [ ] SPEC.md is unchanged: the MVP behaves exactly as specified
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest` (Docker running)
+- [ ] All checks pass
+- [ ] Manual check: `uv run coding-agent "What does this project do?"` in `../toy-repo` behaves as before (user, one cheap real call)
+
+**Dependencies:** Task 3
+
+**Files likely touched:** `src/coding_agent/modes.py`, `src/coding_agent/__main__.py`, `src/coding_agent/agent.py`, `tests/test_modes.py`
 
 **Estimated scope:** Medium
 
@@ -53,44 +101,69 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 ## Checkpoint A: review with the user
 
+- [ ] Gold check done; exclusions written down with reasons
+- [ ] Every MVP test passes unchanged
+
 ---
 
-## Task 3: `run_command` tool and config
+## Task 5: ImageSetup on one real task image
 
-**Description:** `config.py` holds the constants from L9 and S9 (the sandbox reads its limits and deny list from it). `tools.py` holds `RunCommandInput`, the hand-written `input_schema` constant, the tool description and a handler that validates input, calls `Sandbox.run` and returns the result text.
+**Description:** `eval/mode.py` ImageSetup for one task: its SWE-bench image (M1, S8 checks it exists), `/testbed` (M2), commands with the `testbed` conda environment active (M3; find out how the images activate it), eval limits 4 GB and 120 s (M4), no copy-in (M6), clean git history (E5), and a baseline of exactly the repo's own files from `git -C /testbed ls-files -z` (M7). Docker tests use one small, fast task image.
 
 **Acceptance criteria:**
-- [x] Invalid input (empty command, timeout outside 1–300) returns an `is_error` result with the pydantic message
-- [x] A non-zero exit is a normal result starting `exit_code: <n>`; a timeout is `is_error`
-- [x] A unit test checks the `input_schema` constant agrees with `RunCommandInput`
+- [ ] After setup, `git -C /testbed log --all` and `git -C /testbed fsck --unreachable` show no commit newer than the task's starting commit
+- [ ] Running the repo's tests (which rebuilds ignored build files) and then taking the diff gives an empty patch
+- [ ] A command can import the repo's package, i.e. the conda environment is active; the container has `--network none` and 4 GB memory
 
 **Verification:**
-- [x] Tests pass: `uv run pytest tests/test_tools.py`
-- [x] All checks pass
+- [ ] Tests pass: `uv run pytest tests/test_eval_mode.py` (Docker running, task image built)
+- [ ] All checks pass
 
-**Dependencies:** Task 1
+**Dependencies:** Tasks 2 and 4
 
-**Files likely touched:** `src/coding_agent/config.py`, `src/coding_agent/tools.py`, `src/coding_agent/sandbox.py`, `tests/test_tools.py`
+**Files likely touched:** `src/coding_agent/eval/mode.py`, `src/coding_agent/config.py`, `tests/test_eval_mode.py`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 6: Eval prompt and tool description
+
+**Description:** The eval system prompt (A4: issue text, `/testbed`, no network, reproduce first, source files only, run tests, delete scratch scripts, short summary) and the eval tool description (M5: `/testbed` is a git repo at the starting commit; `git diff`/`log`/`status` fine; no commit, stash or checkout). ImageSetup provides both; the input schema is shared.
+
+**Acceptance criteria:**
+- [ ] The schema-matches-`RunCommandInput` test runs for both tool definitions
+- [ ] Requests in eval mode have byte-identical `system` and `tools` across turns (fake client)
+- [ ] The issue text goes in the first user message, not the system prompt, so the system prompt is the same for every task
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest tests/test_tools.py tests/test_eval_mode.py`
+- [ ] All checks pass
+
+**Dependencies:** Task 5
+
+**Files likely touched:** `src/coding_agent/prompts.py`, `src/coding_agent/tools.py`, `src/coding_agent/eval/mode.py`, `tests/test_tools.py`
 
 **Estimated scope:** Small
 
 ---
 
-## Task 4: Agent loop
+## Task 7: RecordPrediction, and the gold fix through `run_command`
 
-**Description:** `prompts.py` (system prompt), the thin model wrapper in `model.py` (L1), and the loop in `agent.py` (L2–L9), which only calls `Model.query` and takes an injected model and sandbox. Check current API docs for streaming, effort and prompt caching first.
+**Description:** RecordPrediction (F1, F2, A5): append `{instance_id, model_name_or_path, model_patch}` to the predictions file right away, empty patch included, for every stop reason; write the trajectory to `runs/<run id>/trajectories/<trial>/<instance_id>.json`. Then the key Docker test: a fake model writes the task's gold fix into `/testbed` with `run_command`, and the official harness resolves the recorded patch.
 
 **Acceptance criteria:**
-- [x] Unit tests with a fake client (replies built as `anthropic.types.Message`) cover: tool use then `end_turn`; `max_tokens` with a cut-off tool call stops without running it; the 50-call cap; the context backstop; API error; Ctrl+C during a command and during streaming
-- [x] Every request has byte-identical `system` and `tools`; all tool results for a turn are in one user message
+- [ ] Every stop reason (done, call cap, context limit, refusal, API error) records a prediction (unit test, fake sandbox)
+- [ ] The fake-model gold fix on the Task 5 image is resolved by the official harness
+- [ ] A do-nothing fake model gives an empty patch, graded as empty patch, not error
 
 **Verification:**
-- [x] Tests pass: `uv run pytest tests/test_agent.py`
-- [x] All checks pass
+- [ ] Tests pass: `uv run pytest tests/test_eval_mode.py`
+- [ ] All checks pass
 
-**Dependencies:** Task 3
+**Dependencies:** Task 6
 
-**Files likely touched:** `src/coding_agent/prompts.py`, `src/coding_agent/model.py`, `src/coding_agent/agent.py`, `tests/fakes.py`, `tests/test_agent.py`
+**Files likely touched:** `src/coding_agent/eval/mode.py`, `src/coding_agent/agent.py` (trajectory writer takes a path), `tests/test_eval_mode.py`
 
 **Estimated scope:** Medium
 
@@ -98,54 +171,149 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 ## Checkpoint B: review with the user
 
+- [ ] One task goes through ImageSetup → loop → RecordPrediction → harness, and the gold fix resolves
+
 ---
 
-## Task 5: Review, apply, trajectory and the `coding-agent` command
+## Task 8: The eval runner and `coding-agent eval`
 
-**Description:** Wire it together: `__main__.py` runs start → copy in → baseline → loop → review → apply or discard → trajectory → cleanup (`SPEC.md` § How a run works, D1–D6, § Output, § Trajectory). The demo in `sandbox.py` stays (user's choice): it's the free, by-hand way to try the sandbox.
+**Description:** `eval/runner.py` runs the selected tasks one after another, each in a fresh container, into `runs/<run id>/` (`meta.json`, `predictions-1.jsonl`, `trajectories/1/`). Resume (R4): skip tasks already in the predictions file. Clean Ctrl+C (R5): stop the current task, remove its container, end the run without recording it. CLI: `coding-agent eval [--model ID] [--limit N | --instances ID,...] [--run-id ID]`. `runs/` is git-ignored.
 
 **Acceptance criteria:**
-- [x] Empty diff says "no file changes"; otherwise the stat then the diff, then `[a]pply / [d]iscard`; Ctrl+C or Ctrl+D at the prompt discards
-- [x] A failed `git apply --check` saves the patch to `.agent/patches/` and says why
-- [x] A trajectory JSON is written on normal exit, error and Ctrl+C, without the API key
-- [ ] `uv tool install --editable .` then `coding-agent "…"` works from any repo (checked with `uv run coding-agent`; the global install is left to the user)
+- [ ] `meta.json` records model, settings, agent git commit, dataset revision, harness version and the task list
+- [ ] A run stopped after 2 of 4 tasks resumes and runs only the other 2 (unit test, fake model and sandbox)
+- [ ] After Ctrl+C, no container from the run is left running, and the interrupted task isn't in the predictions file (Docker test)
 
 **Verification:**
-- [x] Tests pass: `uv run pytest`
-- [x] All checks pass
-- [ ] Manual check: the user runs it once on a scratch repo with the real API
+- [ ] Tests pass: `uv run pytest tests/test_eval_runner.py`
+- [ ] All checks pass
 
-**Dependencies:** Tasks 2 and 4
+**Dependencies:** Task 7
 
-**Files likely touched:** `src/coding_agent/__main__.py`, `src/coding_agent/agent.py`, `src/coding_agent/sandbox.py`, `tests/test_agent.py`, `pyproject.toml`
+**Files likely touched:** `src/coding_agent/eval/runner.py`, `src/coding_agent/__main__.py`, `.gitignore`, `tests/test_eval_runner.py`
 
 **Estimated scope:** Medium
 
 ---
 
-## Task 6: Live task tests and README
+## Task 9: Cost: price table, per-model context limit, `--max-cost`
 
-**Description:** Live tests for the four task tests, run against the existing toy repo at `../toy-repo` (a sibling of this repo, with the planted off-by-one bug in `calc/ranges.py`). Each test copies the toy repo into `tmp_path` first, so the original is never changed. Skipped unless `--live` and a key are given; only the user runs them. Plus a README covering install, run and the security model in plain terms.
+**Description:** A price table per model in `config.py`, from the current pricing docs, not memory (R3). Context limit per model (R2): 90,000 for Haiku 5.5, 150,000 otherwise, checked after each response as in L5 (the pre-send estimate is Task 13). Cost per task in the trajectory; `--max-cost` (default $5) starts no new task once the estimated spend reaches it.
 
 **Acceptance criteria:**
-- [x] `uv run pytest` skips the live tests; `uv run pytest --live` runs them (user only)
-- [x] A live run saves one real reply to `tests/fixtures/`, and a unit test loads it as a `BetaMessage` (catches drift between the fake replies and the real SDK)
-- [x] README says: build the image, install, run, add `.agent/` to `.gitignore`, keep Docker Desktop's disk limit below your free space, read the whole diff before applying
+- [ ] Cost is computed from fresh input, cache read, cache write and output tokens separately (unit test with a fixed usage)
+- [ ] With Haiku 5.5, a task stops with stop reason `context limit` above 90,000 input tokens and still records its diff
+- [ ] With `--max-cost` set below the first task's cost, the second task never starts; resuming with a higher limit continues
 
 **Verification:**
-- [x] All checks pass
-- [x] The user runs `uv run pytest --live` and the four task tests pass
+- [ ] Tests pass: `uv run pytest tests/test_eval_runner.py tests/test_agent.py`
+- [ ] All checks pass
 
-**Dependencies:** Task 5
+**Dependencies:** Task 8
 
-**Files likely touched:** `tests/test_live.py`, `README.md`
+**Files likely touched:** `src/coding_agent/config.py`, `src/coding_agent/agent.py`, `src/coding_agent/eval/runner.py`, `tests/test_eval_runner.py`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 10: Grading and the report
+
+**Description:** After all tasks, the runner calls `grade.py` on the predictions file (`--run_id <run id>-t1`, `--namespace ''` on Apple Silicon) and keeps the harness's logs in `runs/<run id>/harness/`. `eval/report.py` joins the grades with each trajectory into `report.md` and `results.json`: resolved count and percentage, empty patches and errors listed by task, total and per-task cost, median calls and time, stop reason counts. Errors are reported separately, never as agent failures.
+
+**Acceptance criteria:**
+- [ ] Report maths on a saved set of trajectories and harness results gives the expected figures (unit test)
+- [ ] `results.json` holds the per-task rows that `eval-compare` will need
+- [ ] A harness error on one task shows up as an error, not as unresolved
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest tests/test_eval_report.py`
+- [ ] All checks pass
+
+**Dependencies:** Tasks 2 and 9
+
+**Files likely touched:** `src/coding_agent/eval/report.py`, `src/coding_agent/eval/runner.py`, `src/coding_agent/eval/grade.py`, `tests/test_eval_report.py`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 11: Fake-model runs over every task
+
+**Description:** Two runs of the whole pipeline over the full task list, with no model cost: a fake model that writes each task's gold fix through `run_command`, and a fake model that does nothing. They check the pipeline and the lockdown flags on every task, not just one. A small command or test option selects the fake model, and it can't be used by accident in a normal run.
+
+**Acceptance criteria:**
+- [ ] Gold fixes through `run_command`: every task in the list resolves
+- [ ] Do-nothing: every task is an empty patch, none is an error
+- [ ] Any task that fails only inside the lockdown flags is fixed through M4's limits or excluded with a reason
+
+**Verification:**
+- [ ] All checks pass
+- [ ] Manual check: both runs' `report.md` (slow on the Mac; may run on x86)
+
+**Dependencies:** Task 10
+
+**Files likely touched:** `src/coding_agent/eval/runner.py`, `tests/test_eval_runner.py`, `evals/exclusions.txt`
 
 **Estimated scope:** Small
 
 ---
 
-## Checkpoint C: every `SPEC.md` acceptance test checked off; review with the user; open the PR
+## Task 12: Live runs and the README (user)
 
-- [x] Every `SPEC.md` acceptance test checked off
-- [x] Review the branch with the user
-- [x] Open the PR
+**Description:** A live test on 3 tasks with a low call cap (`--live` only). Then the user's first full Haiku 5.5 run on Verified Mini within the `--max-cost` budget. The README gains an eval section: install the extra, build or pull images, the gold check, a run, resume, reading the report, the known limitation about other runs during an eval.
+
+**Acceptance criteria:**
+- [ ] `uv run pytest` skips the live eval test; `uv run pytest --live` runs it (user only)
+- [ ] The full run writes `report.md` within the budget
+- [ ] A run killed mid-way (Ctrl+C, or the process killed) resumes and skips finished tasks
+
+**Verification:**
+- [ ] All checks pass
+- [ ] The user runs the live test and the full run, and the First acceptance tests are checked off in `SPEC-Phase1.md`
+
+**Dependencies:** Task 11
+
+**Files likely touched:** `tests/test_live.py`, `README.md`, `CLAUDE.md` (§ Commands), `SPEC-Phase1.md` (acceptance boxes)
+
+**Estimated scope:** Small
+
+---
+
+## Checkpoint C: every First acceptance test checked off; review with the user; open the PR
+
+- [ ] Every **First** acceptance test in `SPEC-Phase1.md` checked off
+- [ ] Review the branch with the user
+- [ ] Open the PR
+
+---
+
+## Phase D: Later
+
+These follow the first real run. Each gets full acceptance criteria when it starts, using what the first run showed.
+
+### Task 13: Pre-send context estimate (A2)
+
+Before each request, estimate its size (last input total + output tokens + new tool-result characters / 3.5) and stop with `context limit` without sending if over the limit. Acceptance: no request in any trajectory goes over 100,000 input tokens, and the report says so. **Dependencies:** Task 9.
+
+### Task 14: Per-run labels (R1)
+
+Each container gets `coding-agent.run=<run id>` and the runner's process id; S7 removes leftovers only from runs whose process has exited. Acceptance: two eval workers in parallel don't remove each other's containers (Docker test); the known limitation is removed from the spec. **Dependencies:** Task 8.
+
+### Task 15: Trials (A6)
+
+`--trials k`: `predictions-<trial>.jsonl` and `trajectories/<trial>/` per trial, each graded with `--run_id <run id>-t<trial>`; the report adds the average and the share solved in all k trials. **Dependencies:** Task 10.
+
+### Task 16: `eval-compare`
+
+`coding-agent eval-compare <run A> <run B>` prints both summaries side by side and the tasks that flipped between resolved and unresolved. Acceptance: the flipped tasks are listed correctly for two saved `results.json` files. **Dependencies:** Task 10.
+
+### Task 17: mini-swe-agent baseline (user)
+
+Run mini-swe-agent once on the same tasks and model and record its resolved count and cost in the first report. **Dependencies:** Task 12.
+
+### Task 18: A full run on AWS Spot (user)
+
+A persistent Spot `c7a.2xlarge` with interruption behaviour `stop` and a 100 GB disk, prebuilt x86 images; a README runbook. Acceptance: the run completes using prebuilt images. **Dependencies:** Task 12.
+
+## Checkpoint D: every acceptance test in `SPEC-Phase1.md` checked off; review with the user
