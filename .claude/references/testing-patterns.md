@@ -1,6 +1,6 @@
 # Testing Patterns Reference (Python / pytest)
 
-Quick reference of Python testing patterns for this project — a coding agent built on the Anthropic Python SDK — illustrating the universal principles from the `test-driven-development` skill. Tooling: `pytest`, `pytest-asyncio`, `typer.testing.CliRunner`, run through `uv run pytest`.
+Quick reference of Python testing patterns for this project — a coding agent built on the Anthropic Python SDK — illustrating the universal principles from the `test-driven-development` skill. Tooling: `pytest`, run through `uv run pytest`.
 
 Adapted from the JS/TS version in [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (MIT).
 
@@ -13,9 +13,8 @@ Adapted from the JS/TS version in [addyosmani/agent-skills](https://github.com/a
 - [Mocking Patterns](#mocking-patterns)
 - [Testing the Agent Loop (no network)](#testing-the-agent-loop-no-network)
 - [Testing Tools](#testing-tools)
-- [CLI Testing](#cli-testing)
+- [Docker Tests](#docker-tests)
 - [Live API Tests](#live-api-tests)
-- [Async Tests](#async-tests)
 - [Test Anti-Patterns](#test-anti-patterns)
 
 ## Test Structure (Arrange-Act-Assert)
@@ -39,11 +38,11 @@ def test_create_task_defaults_to_pending():
 ```python
 # Pattern: test_<unit>_<expected behavior>_<condition>
 # Group related tests in a module or a plain class (no unittest.TestCase needed).
-class TestEditTool:
-    def test_replaces_unique_match(self): ...
-    def test_errors_when_match_is_not_unique(self): ...
-    def test_errors_when_file_is_outside_workspace(self): ...
-    def test_preserves_trailing_newline(self): ...
+class TestRunCommand:
+    def test_returns_exit_code_on_first_line(self): ...
+    def test_nonzero_exit_is_not_an_error(self): ...
+    def test_rejects_empty_command(self): ...
+    def test_caps_output_keeping_head_and_tail(self): ...
 ```
 
 ## Common Assertions
@@ -72,10 +71,10 @@ with pytest.raises(ValueError, match="title is required"):
     fn()
 
 # Many inputs, one behavior
-@pytest.mark.parametrize("path", ["../etc/passwd", "/etc/passwd", "a/../../b"])
-def test_rejects_paths_outside_workspace(path, workspace):
-    with pytest.raises(PathOutsideWorkspace):
-        resolve_in_workspace(workspace, path)
+@pytest.mark.parametrize("args", [{"command": ""}, {"command": "ls", "timeout": 0}, {"command": "ls", "timeout": 301}])
+def test_rejects_invalid_input(args):
+    with pytest.raises(ValidationError):
+        RunCommandInput.model_validate(args)
 ```
 
 ## Fixtures
@@ -86,7 +85,7 @@ import pytest
 
 @pytest.fixture
 def workspace(tmp_path):
-    """A throwaway repo directory for tools to operate on."""
+    """A throwaway repo directory to copy into the sandbox."""
     (tmp_path / "app.py").write_text("def add(a, b):\n    return a - b\n")
     return tmp_path
 
@@ -107,7 +106,7 @@ Mock these:                    Don't mock these:
 ├── The Anthropic client       ├── The agent loop itself
 ├── Subprocess / Docker        ├── Message/history handling
 ├── Network requests           ├── Tool input validation
-├── Time/clock (when needed)   ├── Path resolution logic
+├── Time/clock (when needed)   ├── Output truncation
 └── Environment variables      └── Pure functions
 ```
 
@@ -117,8 +116,9 @@ Design the agent to take its model client as a parameter, so tests pass a fake i
 
 ```python
 class Agent:
-    def __init__(self, client, tools, model="claude-opus-5-5"):
+    def __init__(self, client, sandbox, model="claude-opus-5-5"):
         self.client = client
+        self.sandbox = sandbox
         ...
 ```
 
@@ -126,7 +126,7 @@ Reach for `monkeypatch.setattr` or `unittest.mock` only when injection isn't pos
 
 ## Testing the Agent Loop (no network)
 
-Record real API responses once and replay them. Save with `response.model_dump_json()` into `tests/fixtures/`, then load with the SDK's own types so the loop sees exactly what the API returns:
+Script the replies in each test, built as the SDK's own `Message` type so pydantic rejects any shape the API wouldn't return (a small `reply(...)` helper keeps this short). Keep one or two real responses, saved with `response.model_dump_json()` into `tests/fixtures/`, to catch drift; load them the same way:
 
 ```python
 from pathlib import Path
@@ -150,13 +150,16 @@ class FakeClient:
         return self._responses.pop(0)
 
 
-def test_agent_runs_tool_then_finishes(workspace):
-    client = FakeClient(load_message("edit_tool_use"), load_message("final_answer"))
-    agent = Agent(client=client, tools=default_tools(workspace))
+def test_agent_runs_tool_then_finishes(fake_sandbox):
+    client = FakeClient(
+        reply(tool_calls=["sed -i 's/a - b/a + b/' app.py"]),
+        reply(text="Fixed add()."),
+    )
+    agent = Agent(client=client, sandbox=fake_sandbox)
 
     result = agent.run("Fix the add function")
 
-    assert "return a + b" in (workspace / "app.py").read_text()
+    assert fake_sandbox.commands == ["sed -i 's/a - b/a + b/' app.py"]
     assert result.stop_reason == "end_turn"
     # History is append-only: second request starts with the first request's messages
     first, second = client.requests
@@ -173,73 +176,49 @@ Things worth asserting on the recorded requests:
 
 ## Testing Tools
 
-Test each tool as a plain function against `tmp_path`. No model involved.
+Test the `run_command` handler as a plain function against a fake sandbox. No model involved.
 
 ```python
-def test_bash_tool_runs_in_sandbox(workspace, fake_sandbox):
-    out = bash_tool({"command": "ls"}, sandbox=fake_sandbox)
+def test_run_command_nonzero_exit_is_not_an_error(fake_sandbox):
+    fake_sandbox.next_result = (1, "")
+    out = run_command({"command": "false"}, sandbox=fake_sandbox)
 
-    assert fake_sandbox.commands == ["ls"]
+    assert fake_sandbox.commands == ["false"]
     assert out.is_error is False
+    assert out.content.startswith("exit_code: 1")
 
-def test_bash_tool_times_out(fake_sandbox):
+def test_run_command_times_out(fake_sandbox):
     fake_sandbox.hang = True
-    out = bash_tool({"command": "sleep 999"}, sandbox=fake_sandbox, timeout=0.1)
+    out = run_command({"command": "sleep 999", "timeout": 1}, sandbox=fake_sandbox)
 
     assert out.is_error
     assert "timed out" in out.content
 ```
 
-Security-relevant behaviour (path escapes, symlinks, oversized output, commands that never return) belongs here as explicit tests, not as assumptions.
+Security-relevant behaviour (oversized output, commands that never return, shell metacharacters such as `"; touch /tmp/pwned"` never reaching a host shell) belongs here and in the Docker tests as explicit tests, not as assumptions.
 
-## CLI Testing
+## Docker Tests
 
-```python
-from typer.testing import CliRunner
-from coding_agent.cli import app
-
-runner = CliRunner()
-
-def test_cli_requires_a_prompt():
-    result = runner.invoke(app, [])
-
-    assert result.exit_code != 0
-    assert "Missing argument" in result.output
-```
+Run in the default `uv run pytest`, and skip themselves when Docker isn't running (a fixture that runs `docker version` once and calls `pytest.skip`). Use the real agent image with `--network none`, and remove the container in `finally`.
 
 ## Live API Tests
 
-Tests that call the real API cost money and are non-deterministic. Mark them and keep them out of the default run:
+Tests that call the real API cost money and are non-deterministic. They're skipped unless `--live` is passed (an option registered in `tests/conftest.py`) and `ANTHROPIC_API_KEY` is set:
 
 ```python
-# pyproject.toml
-# [tool.pytest.ini_options]
-# markers = ["live: calls the real Anthropic API"]
-# addopts = "-m 'not live'"
-
-@pytest.mark.live
-def test_model_can_fix_simple_bug(tmp_path): ...
+# tests/conftest.py
+def pytest_addoption(parser):
+    parser.addoption("--live", action="store_true", help="Run tests that call the real API (cost money)")
 ```
 
-Run them deliberately with `uv run pytest -m live`. Use them to re-record fixtures, not as the main safety net.
-
-## Async Tests
-
-```python
-import pytest
-
-@pytest.mark.asyncio
-async def test_streams_final_message(): ...
-```
-
-Always `await` the call under test; an un-awaited coroutine passes silently.
+Only the user runs `uv run pytest --live`; an AI agent never does. Use them to re-record fixtures, not as the main safety net.
 
 ## Test Anti-Patterns
 
 | Anti-Pattern | Problem | Better Approach |
 |---|---|---|
-| Hitting the real API in unit tests | Slow, costs money, flaky | Replay recorded responses |
-| Hand-writing API response dicts | Drift from the real SDK shape | Record with `model_dump_json()`, load with `model_validate_json()` |
+| Hitting the real API in unit tests | Slow, costs money, flaky | A fake client with scripted replies |
+| Hand-writing API response dicts | Drift from the real SDK shape | Build `anthropic.types.Message` objects; keep a few recorded replies as a drift check |
 | Testing implementation details | Breaks on refactor | Test inputs/outputs and recorded requests |
 | Asserting on exact model wording | Model output varies | Assert on effects (files changed, tools called) |
 | Running tool tests on the real repo | Tests mutate your code | Use `tmp_path` |

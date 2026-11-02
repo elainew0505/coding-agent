@@ -1,6 +1,6 @@
 # 0001: The sandbox, not per-command approval, is the safety boundary
 
-Status: accepted, 2026-10-29
+Status: accepted, 2026-10-29. The sandbox details below (bind mount, read-only `.git`, `--allow-network`, host-side git flags) are superseded by [0002](0002-copy-in-diff-out.md); the decision itself stands.
 
 ## Context
 

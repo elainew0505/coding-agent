@@ -1,101 +1,68 @@
-# Implementation Plan: coding-agent v1
+# Implementation Plan: coding-agent MVP (Phase 0)
 
-Status: **approved 2026-10-29**. Implements [SPEC.md](../SPEC.md). Task details, acceptance criteria and verification steps are in [todo.md](todo.md).
+Implements [SPEC.md](../SPEC.md). Tasks, acceptance criteria and verification are in [todo.md](todo.md). One commit per task on `feature/mvp`; the user approves each before the next starts.
 
 ## Overview
 
-Build the one-shot CLI from the spec in thin slices. The two riskiest pieces, the Docker sandbox with a persistent bash session and the agent loop, are proven separately first, then joined into a walking skeleton: `coding-agent run` doing a real task end to end with only the bash tool. The text editor tool, interrupt handling, streaming output and the final success-criteria pass follow.
+`coding-agent "<task>"` copies your repo into a locked-down container, lets Claude work through one `run_command` tool until it's done or hits a limit, then shows the diff and applies it to your repo only if you say so. Modelled on mini-swe-agent: one task per run, bash only, a fresh shell per command, a linear history saved as a trajectory.
 
-## Architecture Decisions
+## Architecture decisions
 
-Each of these gets a short record in `docs/decisions/` in the task that implements it. [0001](../docs/decisions/0001-sandbox-instead-of-approvals.md) (the sandbox instead of per-command approvals) was written with the spec.
+- Copy in, diff out, no mounts: [0002](../docs/decisions/0002-copy-in-diff-out.md)
+- The sandbox, not per-command approval, is the safety boundary: [0001](../docs/decisions/0001-sandbox-instead-of-approvals.md)
+- Native tool calling with a custom stateless `run_command`, not the Anthropic-defined `bash` tool (`SPEC.md` intro)
+- Minimal stack: `anthropic` and `pydantic` only; config is constants (`CLAUDE.md` § Stack)
+- Code style follows `src/sandbox.py`: plain functions, small dataclasses, constants at the top, short comments naming the spec rule
 
-- **Docker through the `docker` CLI (argv lists via `subprocess`), not the Docker SDK for Python.** One fewer dependency, and the commands are easy to read and to copy into a terminal when debugging. (Task 3)
-- **One long-lived container per run** started with `sleep infinity` as PID 1; tools run through `docker exec`. (Task 3)
-- **Persistent bash session**: one `docker exec -i ... bash` process per run. Each command is followed by a unique marker line that carries the exit code, so we know where output ends. On timeout we kill every process in the container except PID 1 (`kill -9 -1`) and start a fresh shell; the tool result says the session was reset. (Task 4)
-- **Editor operations run in the container using only `realpath`, `cat` and `sh`**, with paths passed as arguments, never interpolated into a command string. This keeps the "any image with bash" promise without needing Python in the image. Text manipulation (`str_replace`, `insert`, line numbering) happens in our Python code on the host. (Tasks 7 and 8)
-- **Path checks are for correctness, not the host boundary.** Since file operations run inside the container, a symlink can only reach container files, which bash can already modify. The host boundary is the container itself: only the workspace is mounted, with `.git/` read-only. The workspace path check keeps edits where they belong and gives the model a clear error. (Task 7)
-- **The model client is injected** (`messages.stream(...)` interface), so unit tests replay fixtures through a fake client. (Task 2)
-- **Tools are declared only once implemented**: bash from Task 6, the editor from Task 8. `system` and `tools` stay constant within a run.
-- **Tool calls run one at a time, in issue order**, and results return in that order. Parallel read-only calls would save little in a capped 50-turn run and would complicate the single shell session. (Task 2)
-- **Host-side git goes through one hardened helper** (spec § Host-side git), so neither the dirty-tree check nor the final diff stat can run a program named in repo config or selected by an agent-written `.gitattributes`. (Tasks 5 and 6)
-
-## Task List
-
-### Phase 1: Prove the risky parts
-
-- [ ] Task 1: Project scaffold and `coding-agent --version` (S)
-- [ ] Task 2: Agent loop against a fake client (M)
-- [ ] Task 3: Sandbox container lifecycle with locked-down flags (M)
-- [ ] Task 4: Persistent bash session and the bash tool (M)
-
-### Checkpoint 1: Foundations
-
-- [ ] `uv run pytest`, `uv run pytest -m docker`, `uv run pyright`, `uv run ruff check .` all pass
-- [ ] Loop and sandbox each work on their own
-- [ ] Review with human before wiring them together
-
-### Phase 2: Walking skeleton
-
-- [ ] Task 5: Settings, preflight checks and exit codes (M)
-- [ ] Task 6: `coding-agent run` end to end with the bash tool (M)
-
-### Checkpoint 2: First real run
-
-- [ ] A live run of "create hello.py that prints hello" on a temp git repo succeeds (spec success criterion 1)
-- [ ] README has install, configure and run instructions
-- [ ] Review with human
-
-### Phase 3: Text editor tool
-
-- [ ] Task 7: Editor `view` and `create` with workspace path checks (M)
-- [ ] Task 8: Editor `str_replace` and `insert`; declare the editor tool (M)
-
-### Checkpoint 3: Both tools
-
-- [ ] A live run that edits an existing file uses the editor tool and succeeds
-- [ ] Review with human
-
-### Phase 4: Hardening and polish
-
-- [ ] Task 9: Ctrl-C handling and guaranteed container cleanup (S)
-- [ ] Task 10: Streamed terminal output with rich (S)
-- [ ] Task 11: Success-criteria pass and v1 docs (M)
-
-### Checkpoint 4: v1 complete
-
-- [ ] All 14 spec success criteria verified, each by a named test
-- [ ] Definition of Done (`.claude/references/definition-of-done.md`) holds
-- [ ] Ready for review
-
-## Dependency Graph
+## Dependency graph
 
 ```
-1 scaffold
-├── 2 loop ──────────────┐
-├── 3 sandbox ── 4 bash ─┤
-└── 5 settings/preflight ┴── 6 run end to end
-                                 ├── 7 editor view/create ── 8 editor edit
-                                 ├── 9 Ctrl-C
-                                 └── 10 output
-                                          all ── 11 success criteria
+sandbox.py (S, D helpers)       ← exists; tested first
+    │
+    ├── tools.py + config.py    (run_command: validation, result text)
+    │       │
+    │       └── agent.py loop   (L rules, fake client)
+    │               │
+    │               └── review, apply, trajectory, __main__.py (D rules, CLI)
+    │                       │
+    │                       └── live tests on ../toy-repo, README
 ```
 
-Tasks 2, 3 and 5 depend only on Task 1 and could run in parallel. Tasks 7, 9 and 10 are independent of each other once Task 6 is done.
+## Task list
 
-## Risks and Mitigations
+### Phase A: Foundation
+- [x] Task 1: uv project and the sandbox module
+- [x] Task 2: Docker safety tests for the sandbox
+
+### Checkpoint A
+- [x] `uv run pytest` passes with Docker running; every S-rule safety test is green
+- [ ] Review with the user
+
+### Phase B: The loop
+- [x] Task 3: `run_command` tool and config
+- [x] Task 4: Agent loop and model wrapper
+
+### Checkpoint B
+- [x] Unit tests cover L1–L9 with the fake model and fake client
+- [ ] Review with the user
+
+### Phase C: End to end
+- [x] Task 5: Review, apply, trajectory and the `coding-agent` command
+- [ ] Task 6: Live task tests (against `../toy-repo`) and README (code done; waiting on the user's first `--live` run)
+
+### Checkpoint C
+- [ ] Every acceptance test in `SPEC.md` is checked off (live ones run by the user)
+- [ ] Review with the user, then open the PR
+
+## Risks and mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Persistent bash session: marker parsing, partial output, a command that reads stdin or never ends | High | Done early (Task 4), with Docker tests for each of those cases |
-| Read-only `.git/` mount nested inside the read-write workspace mount behaves differently on Docker Desktop for Mac | Medium | Verified first thing in Task 3. If it fails, fall back to not exposing `.git/` in the sandbox at all (the agent doesn't need git; `git diff --stat` runs on the host), and record that in the spec |
-| Files the agent creates end up owned by the wrong user on the host | Medium | Run as host uid:gid; a Docker test checks ownership of a created file |
-| Claude API parameters differ from what CLAUDE.md assumes (effort, tool versions, streaming helpers) | Medium | Check with the `claude-api` skill and current docs at the start of Tasks 2 and 6 |
-| Live tests cost money and are slow | Low | Few of them, opt-in with `-m live`; unit tests replay recorded fixtures |
-| A recorded fixture leaks an API key or header | Low | Save only `response.model_dump_json()`; a unit test greps `tests/fixtures/` for key patterns |
-| Host-side `git status`/`git diff` runs a program named in repo config or chosen by an agent-written `.gitattributes` | Medium | Hardened helper (spec § Host-side git), tested with a temp repo whose config points at a script |
-| Two guards on the same thing (editor path check, read-only `.git` mount) hide each other's regressions | Low | Each is tested with the other absent (spec § Testing Strategy) |
+| Docker behaviour differs between Docker Desktop on macOS and Linux (tar flavour, process handling) | High | Task 2 runs every sandbox rule against a real container before anything builds on it |
+| `docker exec` doesn't return while a background process holds its output open | Med | A Docker test with `sleep 1000 &`; if it hangs, redirect or kill in `run` |
+| Claude edits files poorly through bash alone | Med | Live task tests in Task 6; a structured `edit_file` tool is Phase 1 if needed |
+| API details (effort, caching, streaming) differ from what the spec assumes | Med | Checked against the current docs in Task 4; the first live run (Task 6) confirms them for real |
 
-## Open Questions
+## Open questions
 
-None blocking. The sandbox image digest is pinned during Task 3.
+- The three safety additions (flag deletions and auto-run files, strip control characters, cap the diff) are not yet in the spec

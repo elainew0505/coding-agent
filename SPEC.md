@@ -1,227 +1,187 @@
-# Spec: coding-agent
+# MVP detailed requirement
 
-Status: **approved 2026-10-29**
+The MVP (Phase 0) is a command-line tool: `coding-agent "<task>"` runs one task, with Claude working through a single `run_command` tool inside a throwaway Docker container that holds a copy of your repo. Nothing touches your real repo until you review the final `git diff` and choose to apply it. It is done when it fixes a planted bug in a toy repo and the diff applies cleanly.
 
-## Objective
+The design follows [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent): one task per run, bash is the only tool, every command runs in a fresh shell, and the history is a plain linear list of messages saved at the end as a trajectory. One difference: Claude calls `run_command` through native tool calling instead of writing a bash block that the harness parses out of its text. That makes malformed output impossible and a task ends when Claude stops calling tools, so no completion marker is needed. We don't use the Anthropic-defined `bash` tool because its contract is a persistent shell session.
 
-A command-line coding agent. You give it a task and a git repository; it calls Claude in a tool-use loop, runs commands and edits files inside a Docker sandbox, and stops when the task is done or a limit is hit. Its changes are left uncommitted in your working tree for you to review.
+## Scope
 
-**User:** a developer (initially the repo owner) running it locally with Docker. Not multi-user, not hosted.
+**In scope**
 
-**Why:** a small, readable agent where every safety property is enforced in code and covered by tests, rather than trusted to the prompt.
+- One task per run from the terminal, one user, one run at a time (S7 removes any other run's container)
+- Claude through the Anthropic Python SDK, using native tool calling
+- One tool, `run_command`, executed inside a Docker container with no network
+- Your repo copied into the container at the start; changes leave only as a diff you review
+- Ctrl+C to stop the task at any time
+- Nothing in the workspace configures the agent: no config, instruction or hook file in your repo is read by the harness. A repo you point the agent at must not be able to change its limits or behaviour (see [0001](docs/decisions/0001-sandbox-instead-of-approvals.md))
 
-### User stories
+**Out of scope (later phases)**
 
-- I run `coding-agent run "add a --verbose flag to cli.py" --workspace ~/src/proj` and watch it work: Claude's text, each command and its result, each file edit.
-- When it finishes I see a summary of what changed (`git diff --stat`) and review the diff myself.
-- It can't touch anything outside the workspace, can't reach the network unless I pass `--allow-network`, and can't commit.
-- If it loops, hangs or runs away, a limit stops it and tells me which limit.
-- Ctrl-C stops it cleanly and removes the container.
+- Benchmark suite, structured `edit_file` tool if bash edits prove unreliable (Phase 1)
+- Follow-up tasks in one session (a REPL), todo lists, project instruction files, history summaries (Phase 2)
+- Git branch and commit on your repo, network access per command, auto-approve rules (Phase 3). Until there's network, the agent image only has the toy repo's dependencies (S1)
+- MCP, sub-agents, session resume, TUI (Phase 4)
 
-### Decisions (agreed 2026-10-29)
+## How a run works
 
-| Topic | Decision |
-|---|---|
-| Workspace | The target folder is mounted read-write and edited directly. It must be a git repo. |
-| Approvals | Fully autonomous. The sandbox is the safety boundary; no per-command prompts. See [0001](docs/decisions/0001-sandbox-instead-of-approvals.md). |
-| Network | Off by default; `--allow-network` enables it for one run. |
-| Git | The agent never commits. `.git/` is mounted read-only in the sandbox, so no commit can be written. |
-| Where tools run | Both tools (bash and file edits) execute inside the container. Nothing model-issued runs on the host. |
+1. **Start:** `coding-agent [--model ID] "<task>"` anywhere in your repo starts a labelled container from the agent image. The harness works from the repo's top folder (`git rev-parse --show-toplevel`) for every host step, because `git apply` reads patch paths relative to it.
+2. **Copy in:** the files git would track (tracked, plus untracked ones `.gitignore` doesn't exclude), minus `.agent/` and a deny list of secret files, are streamed into `/workspace` in the container.
+3. **Baseline:** the harness (not the model) creates a git repo at `/harness.git`, outside the workspace, and commits a baseline.
+4. **Loop:** Claude calls `run_command` until it stops asking for tools or a limit is hit; each command and a short output preview print as they run.
+5. **Diff out:** the harness stages everything and takes `git diff --cached --binary <baseline>`.
+6. **Review:** you see a file summary and the full diff, then choose apply or discard.
+7. **Apply:** `git apply --check`, then `git apply` on your real repo.
+8. **Clean up:** the trajectory is saved and the container is removed, including after an error or Ctrl+C.
 
-### Out of scope for v1
+## Sandbox
 
-Interactive chat / REPL; session resume; context compaction; web fetch or search tools; MCP; subagents; reading the workspace's own `CLAUDE.md`/`AGENTS.md`; Windows support; running without Docker.
+The container is the safety boundary: nothing inside it can reach your files, your network or your credentials.
 
-## Behavior
+| ID | Requirement |
+| --- | --- |
+| S1 | Agent image built from a small `Dockerfile`: `python:3.12-slim` pinned by digest (`FROM python:3.12-slim@sha256:<digest>`, so the base can't change under you) plus `git` (not in the base image), `WORKDIR /workspace` (copy-in needs the folder to exist) and the toy repo's test dependencies (no network at run time, so dependencies are baked in). This means the MVP can only run tests for the toy repo; on any other repo, test commands will fail on missing packages |
+| S2 | Start with `docker run -d --name agent-<id> --label coding-agent=1 --network none --memory 2g --cpus 2 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges <image> sleep infinity` |
+| S3 | No volume mounts, no Docker socket, no `-e` secrets; the API key stays in the host Python process |
+| S4 | Copy in with a tar stream. List files with `git ls-files -z --cached --others --exclude-standard`, drop paths that no longer exist on disk and paths matching S9, then `COPYFILE_DISABLE=1 tar -c --no-xattrs --null --no-recursion -T - \| docker exec -i agent-<id> tar -x --no-same-owner -C /workspace`. `COPYFILE_DISABLE=1` and `--no-xattrs` stop macOS tar adding `._*` files and Apple attributes. `--no-same-owner` is required: without it, tar as root tries to keep your uid, `--cap-drop ALL` forbids that, and tar exits 2 |
+| S5 | Baseline inside the container: `git init`, `git add -A --force` (everything in `/workspace` was chosen by S4, including files the repo tracks despite `.gitignore`, so their later edits are diffed too), `git -c user.name=agent -c user.email=agent@local commit -m baseline`; store the commit SHA. Every harness git command runs as `git --git-dir=/harness.git --work-tree=/workspace …`, so there is no `.git` in the workspace for the model to delete, commit to or rewrite |
+| S6 | Remove the container with `docker rm -f agent-<id>` in a `try/finally` and an `atexit` hook |
+| S7 | On startup, remove leftover containers only if they carry the `coding-agent=1` label, never by name pattern or `docker ps` alone |
+| S8 | Fail fast with a clear message, before starting a container, if Docker isn't running, the image is missing, the current folder isn't a git repo, or neither `ANTHROPIC_API_KEY` nor `ANTHROPIC_AUTH_TOKEN` is set |
+| S9 | Never copy: anything under `.agent/`, or a file whose name matches `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ecdsa*` or `id_ed25519*` (case-insensitive: macOS treats `Server.PEM` and `server.pem` as the same file), even if git tracks it. The list lives in `config.py`. Anything copied in can be read by the model and so sent to the API and written to the trajectory |
 
-### CLI
+The agent runs as root inside the container. That is fine here: with no mounts, root inside cannot create root-owned files or stray `.git` folders on your machine. `--cap-drop ALL` and `no-new-privileges` still take away root's extra kernel permissions, which nothing the agent does needs, so a container escape is harder if one exists.
+
+## Agent loop
+
+| ID | Requirement |
+| --- | --- |
+| L1 | All model calls go through one thin wrapper, `Model.query(messages)` in `model.py`; the loop never touches the SDK. `Model(name)` works with any current model: the default is `claude-haiku-5-5` (the cheapest), and `--model claude-opus-5-5` picks the strongest for one run. Each call sends the system prompt, full message history and the `run_command` tool as a streaming request (`client.beta.messages.stream(...)` + `get_final_message()`, which avoids timeouts on long replies), with `output_config.effort` set explicitly (default `medium`), top-level `cache_control: {type: "ephemeral"}` so the growing history is cached, and, only for models that have one (Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5; not Haiku 5.5), `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) so a safety-classifier refusal is retried on Anthropic's recommended fallback model. Without a fallback, a refusal stops the task (L3). `eager_input_streaming` is off: the tool's input is one short command, and leaving it off keeps the server's input validation |
+| L2 | Append the full response content as the assistant message, then act on `stop_reason`. `tool_use`: run each tool call in order and send all the results, in the same order, in a single user message |
+| L3 | `end_turn`: the task is done; print the final text and go to review. Any other `stop_reason` (e.g. `max_tokens`, `refusal`) ends the task with a message naming it, then goes to review, even if the reply contains a tool call, since it may be cut off |
+| L4 | Stop after 50 model calls, tell the user the cap was hit, and still go to review |
+| L5 | Context backstop: after each response, total its input tokens from `usage` (`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`; with caching on, `input_tokens` alone leaves out the cached part). Above 150,000, finish that response's tool calls, say the context is full, and go to review |
+| L6 | On an API error, rely on the SDK's built-in retries (`max_retries=3`, set explicitly; the SDK default is 2), then end the task with the error and go to review. A missing key is caught up front (S8). Any other exception is a bug: it is not caught, and the run crashes after the trajectory is written and the container removed |
+| L7 | Invalid tool input, timeouts and harness errors (e.g. `docker exec` failing) go back to the model as `is_error` tool results, never a crash. A non-zero exit code is a normal result, not an error: a failing test run is information, as in mini-swe-agent |
+| L8 | Ctrl+C stops the task: kill any running command (see below) and go to review. A reply that was still streaming is dropped |
+| L9 | Model name, effort, max tokens, call cap, context threshold and timeouts live in `config.py` |
+
+## The run\_command tool
+
+| Field | Spec |
+| --- | --- |
+| Input | `command` (non-empty string), `timeout` (integer seconds, default 60, 1–300) |
+| Validation | A pydantic model `RunCommandInput` validates the input before anything runs; on failure the pydantic error message goes back as an `is_error` result. The tool's `input_schema` is a hand-written constant next to the model in `tools.py`, with a unit test checking that the two agree, so it stays byte-identical across turns |
+| Runs as | `docker exec -w /workspace agent-<id> timeout <t> bash -lc <command>`, passed to `subprocess` as an argument list, never a string with `shell=True`. A string would let the host shell interpret the command, so `"; rm -rf ~"` would run on your machine |
+| Returns | Text: `exit_code: <n>` on the first line, then combined stdout and stderr |
+| Output cap | 10,000 characters: the first 5,000 and last 5,000 with `[truncated N chars]` between. Output is read in chunks while the command runs, keeping only the first 5,000, a rolling last 5,000 and a count, so a command that prints forever can't fill host memory. Bytes are decoded as UTF-8 with `errors="replace"` |
+| On timeout | The in-container `timeout` kills the command (exit 124); the host gets `timeout + 10` as a backstop |
+| Approval | None per command; the diff review is the checkpoint |
+
+The tool description tells the model:
+
+- Each call starts a fresh shell in `/workspace`; `cd` does not carry over, so chain with `&&`
+- There is no network: no `pip install`, `curl` or `git clone`
+- Edit files with heredocs (`cat <<'EOF' > file`), `sed -i` or a short Python script
+- `/workspace` is not a git repo and must not become one: don't run `git init` anywhere in it; the harness tracks changes itself
+
+The in-container `timeout` matters: killing the host-side `docker exec` alone leaves the command running inside the container. For the same reason, on Ctrl+C or when the host backstop fires, the harness runs `docker exec agent-<id> bash -c 'kill -KILL -1'` (the slim image has no `kill` program, only the shell builtin). That kills every process in the container except PID 1 (`sleep infinity`), including anything the command started in the background, so nothing is still writing files when the diff is taken.
+
+Known limitation: PID 1 is `sleep`, which never reaps orphaned processes, so killed background processes stay as zombies and count toward `--pids-limit 256`. In a 50-call run that is a handful at most. `docker run --init` would reap them, but then `kill -1` would also kill `sleep infinity` and stop the container.
+
+## Review and apply
+
+| ID | Requirement |
+| --- | --- |
+| D1 | When the task ends, run `git add -A && git diff --cached --binary <baseline>` in the container (with the S5 flags) |
+| D2 | Empty diff: say "no file changes" and skip the prompt |
+| D3 | Show a summary (`--stat`) first, then the full diff |
+| D4 | Ask `[a]pply / [d]iscard`; nothing is written to your repo before this answer. Only `a`/`apply` applies and only `d`/`discard`, Ctrl+C or Ctrl+D discard; anything else asks again, so a typo can't throw the work away |
+| D5 | Apply: run `git apply --check` on the host, then `git apply`. If the check fails, write the patch to `.agent/patches/<timestamp>.patch` and say why, so the work isn't lost |
+| D6 | A stopped, capped or failed task still goes to review, so partial work is never lost silently |
+
+Known limitations, accepted for the MVP (none can change your repo without the review):
+
+- **Global ignore rules.** Copy-in (S4) also honours your global gitignore (`core.excludesFile`) and `.git/info/exclude`, but the container's harness git only sees the repo's `.gitignore`. Files the model creates that only your global rules ignore (e.g. a `.venv/`) show up in the diff; discard or ignore them in the repo's `.gitignore`.
+- **`/harness.git` is writable by the model.** It runs as root in the container, so it could delete the harness repo; the diff then fails and the run ends without a review. Your repo is unchanged; the run's work is lost.
+- **A dead container.** If the container stops mid-run, each later command reports Docker's error as an ordinary non-zero exit, so the model may spend calls retrying before the run ends; the diff then fails and there is nothing to review.
+
+## Output
+
+- Print each command as `$ <command>` with the first 5 lines of its output, and Claude's text when a reply arrives (text isn't streamed token by token: on Opus 5.5 the notes between tool calls come back as hidden thinking, so there would be little to show)
+- At the end, print the stop reason and token usage (input and output)
+- Everything printed that came from the model or the sandbox (Claude's text, commands, output previews, the diff) shows control characters and bidi overrides as escapes (`\x1b`, `\u202e`). Printed raw, they could move the cursor or erase lines, so a file the model wrote could hide part of the diff you approve
+
+## System prompt
+
+A short, fixed text in `prompts.py` that tells the model:
+
+- It is a coding agent working on a copy of the user's repo at `/workspace`, with no network
+- To explore (`ls`, `cat`, `grep`) before editing
+- To run the tests after a change when the repo has them
+- That the user reviews a diff of all its changes at the end, so it should keep changes focused
+- To finish with a short summary of what it changed and how it checked
+
+## Trajectory
+
+- At the end of every run (in the same `finally` as S6), write one JSON file to `.agent/trajectories/<timestamp>.json` on the host: the task, system prompt, tool schema, full message history, total usage and stop reason. If the harness crashes mid-task, the history so far is still written, with stop reason `crashed`
+- Never write the API key
+
+## Project layout
 
 ```
-coding-agent run TASK [--workspace DIR] [--allow-network] [--max-turns N]
-                      [--model ID] [--effort LEVEL] [--image NAME]
-coding-agent --version
-```
-
-- `--workspace` defaults to the current directory.
-- Before starting, the CLI checks: Docker is reachable, `ANTHROPIC_API_KEY` is set, and the workspace is a git repo. If the working tree has uncommitted changes, it prints a warning (they will mix with the agent's in `git diff`) and continues.
-- During the run it streams to the terminal with `rich`: model text as it arrives, then each tool call (command or file path) and a truncated view of its result.
-- At the end it prints Claude's final message, the stop reason, `git diff --stat` for the workspace (run on the host by our code), and turns/tokens used.
-
-**Exit codes:** `0` task finished (model ended its turn); `1` runtime error (API, Docker); `2` usage or precondition error; `3` a limit was hit; `130` interrupted.
-
-### Agent loop
-
-- Model `claude-opus-5-5` by default, `output_config.effort` set explicitly (default `medium`), requests streamed.
-- History is append-only; each turn appends the full `response.content`.
-- `system` and `tools` are byte-identical on every turn (prompt caching). The task, workspace path and anything time-varying go in the first user message.
-- All `tool_result` blocks for a turn go back in one user message; a failed tool returns `is_error: true` with a short message.
-- Tool calls in one response run one at a time, in the order the model issued them, and their `tool_result` blocks come back in that same order. (The bash session is a single shell, so it can't run two commands at once anyway.) A failed call doesn't stop the later ones.
-- The loop ends when the model stops without requesting a tool, or when a limit is hit. A response cut off by `max_tokens` or a context-window limit ends the run with exit code `3` and a clear message.
-- No forced `tool_choice`, prefill, sampling parameters or `budget_tokens`.
-- Exact parameter names and tool versions are verified against current Claude API docs at implementation time (`source-driven-development`, `claude-api` skill).
-
-### Tools
-
-Anthropic-defined, declared without `input_schema`:
-
-- **bash** (`bash_20250124`): a persistent shell session inside the container: working directory and environment carry across calls, starting in the workspace. `restart` starts a fresh session. Each command has a wall-clock timeout; on timeout the process is killed and the tool returns an error. stdout and stderr are combined, truncated (head and tail kept, with a note of how much was cut), and returned with the exit code.
-- **text editor** (`text_editor_20250728`): `view`, `create`, `str_replace`, `insert`, executed inside the container. Every path is resolved (symlinks included) and must be inside the workspace; anything else returns an error. Writes into `.git/` are rejected. Large files are truncated on `view`.
-
-Tool inputs are validated with pydantic before any action.
-
-### Sandbox
-
-One container per run, created at start and removed at the end (including on error and Ctrl-C).
-
-- Default image: the public `python:3.12-slim`, pinned by digest. Any image with `bash` can be used via `--image`. No custom image or build step in v1.
-- Runs as the host user's uid:gid, never root; `--cap-drop ALL`; `--security-opt no-new-privileges`; `--network none` unless `--allow-network`.
-- Memory, CPU and pid limits set.
-- Mounts: the workspace read-write at `/workspace`, its `.git/` read-only on top. Nothing else from the host.
-- Host environment is not passed through. `ANTHROPIC_API_KEY` never enters the container.
-
-### Host-side git
-
-Our code runs git on the host twice: `git status` for the dirty-tree warning before the run, and `git diff --stat` after it. This is the only place host code reads files the agent may have written. Git config can name programs that `status` and `diff` run (`core.fsmonitor`, `diff.external`, textconv drivers), and the agent can write `.gitattributes`, which selects diff drivers. So host-side git always runs as:
-
-```
-git -c core.fsmonitor=false status --porcelain
-git -c core.fsmonitor=false diff --stat --no-ext-diff --no-textconv
-```
-
-with output captured (no pager). Known residual: a clean/smudge filter defined in the user's own git config can still be selected by an agent-written `.gitattributes`; we don't override the user's configured filters.
-
-### Limits (defaults, all configurable)
-
-| Limit | Default |
-|---|---|
-| Turns per run | 50 |
-| Wall-clock timeout per command | 120 s |
-| Tool result size returned to the model | 30,000 characters |
-| Total tokens per run (input + output) | 2,000,000 |
-
-### Configuration
-
-Precedence: CLI flags > environment variables (`CODING_AGENT_*`) > user config file (`~/.config/coding-agent/config.toml`) > defaults. Loaded with `pydantic-settings`; the API key is a `SecretStr`.
-
-**Config is never read from the workspace.** A repository you point the agent at could otherwise turn on network or loosen limits.
-
-## Tech Stack
-
-As in [CLAUDE.md](CLAUDE.md#stack): Python 3.12+ with `uv`; `anthropic`; `typer` + `rich`; `pydantic` / `pydantic-settings`; `pytest` + `pytest-asyncio`; `ruff`; `pyright`; Docker. Exact versions are whatever `uv.lock` pins.
-
-## Commands
-
-```bash
-uv sync                                        # install
-uv run coding-agent run "TASK" --workspace DIR # run the agent
-uv run pytest                                  # unit tests: no network, no Docker
-uv run pytest -m docker                        # sandbox tests: real Docker, no API
-uv run pytest -m live                          # end-to-end: real API (costs money)
-uv run ruff check . && uv run ruff format .
-uv run pyright
-```
-
-## Project Structure
-
-```
+pyproject.toml    # uv project; deps: anthropic, pydantic; dev: pytest, ruff, pyright
+uv.lock
+Dockerfile        # agent image
 src/coding_agent/
-  cli.py          → typer app: argument parsing, preflight checks, exit codes
-  config.py       → Settings (pydantic-settings), limits, defaults
-  loop.py         → agent loop; takes an injected model client and sandbox
-  prompts.py      → system prompt and tool declarations (constants, never per-turn)
-  render.py       → rich terminal output
-  sandbox.py      → container lifecycle, exec, persistent shell session
-  tools/
-    bash.py       → bash tool handler
-    editor.py     → text editor handler and path resolution
+  __main__.py     # entry point for the `coding-agent` command
+  agent.py        # agent loop, review prompt, trajectory
+  model.py        # Model.query: the one place that calls the Anthropic API
+  sandbox.py      # start, copy_in, exec, diff, cleanup
+  tools.py        # RunCommandInput, input_schema constant, handler
+  prompts.py      # system prompt, tool description
+  config.py       # model, limits, timeouts, image name, copy-in deny list
 tests/
-  unit/           → no network, no Docker (fake client, fake sandbox)
-  docker/         → marked `docker`: real container, no API
-  live/           → marked `live`: real API end-to-end
-  fixtures/       → recorded API responses (scrubbed of headers and keys)
-docs/decisions/   → decision records
-tasks/            → plan.md and todo.md
 ```
 
-Documentation follows the conventions in [CLAUDE.md § Documentation](CLAUDE.md#documentation): where each kind of doc lives, and that docs change in the same commit as the behavior they describe.
+The API key comes from the `ANTHROPIC_API_KEY` environment variable on the host. Add `.agent/` to your repo's `.gitignore`.
 
-## Code Style
+## Testing
 
-`ruff` formatting and `pyright` strict on `src/`. Type hints everywhere; small functions; pydantic models at boundaries; errors become tool results, not exceptions that escape the loop.
+Modelled on mini-swe-agent's test suite. Three levels, all under `tests/`:
 
-```python
-class StrReplace(BaseModel):
-    command: Literal["str_replace"]
-    path: str
-    old_str: str
-    new_str: str
+| Level | Runs with | What it uses | Covers |
+| --- | --- | --- | --- |
+| Unit | `uv run pytest` | A fake client that returns replies scripted in each test, and a fake sandbox | The L and D rules: stop reasons, call cap, context backstop, Ctrl+C, input validation, truncation, request shape |
+| Docker | `uv run pytest` (skipped automatically if Docker isn't running) | A real container from the agent image, plus the fake client | Every S rule and the safety tests below |
+| Live | `uv run pytest --live` with `ANTHROPIC_API_KEY` set | The real API on a toy repo, with a low call cap | The task tests below |
 
+- **Fake client.** Replies are built in the test with a helper that returns real `anthropic.types.Message` objects (e.g. `reply(tool_calls=["ls"])`, `reply(text="done", stop_reason="max_tokens")`), so pydantic rejects any shape the SDK wouldn't produce. The fake records every request so tests can check that `system` and `tools` are byte-identical across turns and that tool results arrive in one user message. One or two replies recorded from the real API sit in `tests/fixtures/` to catch drift from the SDK's shape.
+- **Docker tests** use `--network none` like the real sandbox, so they need no network. Each removes its container in `finally`.
+- **Live tests** are skipped unless both `--live` is passed and the key is set. They cost money, so an AI agent never runs them; the test file says so at the top.
 
-def str_replace(sandbox: Sandbox, args: StrReplace) -> ToolResult:
-    """Replace exactly one occurrence of old_str in a workspace file."""
-    path = sandbox.resolve_in_workspace(args.path)
-    if path is None:
-        return ToolResult.error(f"{args.path} is outside the workspace")
+## Acceptance tests
 
-    text = sandbox.read_text(path)
-    count = text.count(args.old_str)
-    if count != 1:
-        return ToolResult.error(f"old_str must match exactly once, found {count}")
+The MVP passes when every task test succeeds on a toy repo and every safety test leaves your machine untouched. Each item says which test level checks it.
 
-    sandbox.write_text(path, text.replace(args.old_str, args.new_str))
-    return ToolResult.ok(f"Edited {args.path}")
-```
+**Task tests** (live)
 
-Naming: `snake_case` modules and functions, `PascalCase` classes, no abbreviations beyond common ones (`cfg`, `args`). Comments explain why, especially around security checks.
+- [x] "What does this project do?" answered from reading files, with an empty diff
+- [x] Fix a planted off-by-one bug so the failing test passes; the diff applies cleanly
+- [x] Add a new function plus a test for it, and run the tests
+- [x] Recover from a wrong first edit after seeing the test failure (the test plants a wrong fix, `range(start, end + 2)`, before the run, since a real model can't be made to get its first edit wrong)
 
-## Testing Strategy
+**Safety tests**
 
-Patterns in [.claude/references/testing-patterns.md](.claude/references/testing-patterns.md). Test-first for every behavior (`test-driven-development`).
-
-| Level | Marker | What it covers |
-|---|---|---|
-| Unit | (default) | Loop logic with a fake client replaying `tests/fixtures/`; tool handlers against a fake sandbox; config precedence; CLI arguments and exit codes; request shape (system/tools identical across turns) |
-| Sandbox | `docker` | Real container: path escapes rejected, timeout kills, output truncated, network off/on, `.git` read-only, key absent from container env, container removed on exit and on Ctrl-C |
-| End-to-end | `live` | A few real tasks against the API on a temp git repo |
-
-Where two mechanisms guard the same thing, each is tested without the other, so a regression in one can't hide behind the other. Writes into `.git/` are the main case: the editor's path check is tested against a fake sandbox with no read-only mount, and the read-only mount is tested by writing through bash, which has no path check.
-
-`uv run pytest` runs only unit tests (`addopts = "-m 'not docker and not live'"`). No coverage percentage target; every tool handler, safety check and exit path must have a test. Abuse cases (`..`, absolute paths, symlinks, huge output, `sleep infinity`, `git commit`) are tests, not comments.
-
-## Boundaries
-
-For anyone (human or agent) building this project:
-
-- **Always:** write the failing test first; run `pytest`, `ruff` and `pyright` before committing; keep `system` and `tools` constant across turns; validate tool inputs; update the spec before changing a decision recorded here.
-- **Ask first:** adding a dependency; changing any sandbox flag, mount or network default; adding a tool; changing a limit's default; changing the CLI interface or exit codes.
-- **Never:** run model-issued commands on the host; run host-side git without the flags in [§ Host-side git](#host-side-git); pass `ANTHROPIC_API_KEY` or host env into the container; read config from the workspace; commit fixtures containing keys or auth headers; disable or skip a failing safety test.
-
-## Success Criteria
-
-v1 is done when all of these hold:
-
-1. `coding-agent run "create hello.py that prints hello" --workspace <temp repo>` creates the file, exits `0`, prints the diff stat, and leaves the change uncommitted. (`live`)
-2. Every path escape (`..`, absolute path outside the workspace, symlink to outside, write into `.git/`) returns `is_error: true` and nothing outside the workspace changes. (`docker`)
-3. A command that never exits is killed at the timeout and the run continues. (`docker`)
-4. Output over the limit is truncated with a note of how much was cut. (unit + `docker`)
-5. With default flags, a network request from the sandbox fails; with `--allow-network` it succeeds. (`docker`)
-6. Writing anything under `.git/` from inside the sandbox fails. (`docker`)
-7. `env` inside the sandbox does not contain `ANTHROPIC_API_KEY`. (`docker`)
-8. Hitting the turn or token limit exits `3` and names the limit. (unit)
-9. Not a git repo, missing key, or Docker unavailable each exit `2` with a one-line explanation; a dirty tree prints a warning and continues. (unit)
-10. Ctrl-C exits `130` and no container from the run remains. (`docker`)
-11. `system` and `tools` in every request of a run are byte-identical. (unit)
-12. `uv run pytest`, `uv run pyright` and `uv run ruff check .` all pass; `grep -rE 'sk-ant-|x-api-key|authorization' tests/fixtures` finds nothing.
-13. In a temp repo whose config sets `core.fsmonitor`, `diff.external` and a textconv driver to a script, the dirty-tree check and the final diff stat never run that script. (unit, real `git`, no Docker)
-14. A response with several tool calls, one of which fails, gets one `tool_result` per call in the order issued, with only the failed one marked `is_error`. (unit)
-
-## Open Questions
-
-Resolved 2026-10-29 by taking the simplest option for v1:
-
-1. Dirty working tree: warn and continue (no `--allow-dirty` flag).
-2. Effort default: `medium`.
-3. Budget: a token cap (2M per run), not a cost cap.
-4. Sandbox image: public `python:3.12-slim` pinned by digest, overridable with `--image`.
-
-None open.
+- [x] `rm -rf /workspace` inside the container leaves your repo unchanged, and the review still works and shows every file deleted (docker)
+- [x] A request to `https://example.com` fails (docker; the image has no curl, so the test uses Python)
+- [x] A command containing `"; touch /tmp/pwned` never creates `/tmp/pwned` on the host (docker)
+- [x] `yes` is cut off at the timeout with output capped at 10,000 characters, and the harness never holds more than the head, tail and count (docker)
+- [x] Run from a subfolder, the diff applies at the repo's top folder (docker)
+- [x] `false` returns `exit_code: 1` as a normal result, not `is_error` (unit)
+- [x] A tracked `.env`, an ignored `secrets.txt` and `.agent/` are all absent from `/workspace` (docker)
+- [x] `sleep 1000` is killed at the timeout and the loop continues (docker)
+- [x] Ctrl+C during `sleep 1000 & sleep 1000` leaves nothing running but PID 1 in the container (zombies aside) before the diff is taken, then goes to review (docker)
+- [x] Ctrl+C while a reply is streaming goes to review without appending the partial reply (unit)
+- [x] With the context threshold set to 5,000, the task stops, says the context is full and goes to review (unit)
+- [x] Discarding leaves your repo unchanged; a failed `git apply --check` leaves it unchanged and saves the patch (docker)
+- [x] Normal exit, Ctrl+C and a crash all leave no `coding-agent` container running (`docker ps --filter label=coding-agent=1`) and write a trajectory (docker)
