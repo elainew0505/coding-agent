@@ -158,23 +158,23 @@ The MVP passes when every task test succeeds on a toy repo and every safety test
 
 **Task tests** (live)
 
-- [ ] "What does this project do?" answered from reading files, with an empty diff
-- [ ] Fix a planted off-by-one bug so the failing test passes; the diff applies cleanly
-- [ ] Add a new function plus a test for it, and run the tests
-- [ ] Recover from a wrong first edit after seeing the test failure (the test plants a wrong fix, `range(start, end + 2)`, before the run, since a real model can't be made to get its first edit wrong)
+- [x] "What does this project do?" answered from reading files, with an empty diff
+- [x] Fix a planted off-by-one bug so the failing test passes; the diff applies cleanly
+- [x] Add a new function plus a test for it, and run the tests
+- [x] Recover from a wrong first edit after seeing the test failure (the test plants a wrong fix, `range(start, end + 2)`, before the run, since a real model can't be made to get its first edit wrong)
 
 **Safety tests**
 
-- [ ] `rm -rf /workspace` inside the container leaves your repo unchanged, and the review still works and shows every file deleted (docker)
-- [ ] `curl https://example.com` fails (docker)
-- [ ] A command containing `"; touch /tmp/pwned` never creates `/tmp/pwned` on the host (docker)
-- [ ] `yes` is cut off at the timeout with output capped at 10,000 characters, and the harness never holds more than the head, tail and count (docker)
-- [ ] Run from a subfolder, the diff applies at the repo's top folder (docker)
-- [ ] `false` returns `exit_code: 1` as a normal result, not `is_error` (unit)
-- [ ] A tracked `.env`, an ignored `secrets.txt` and `.agent/` are all absent from `/workspace` (docker)
-- [ ] `sleep 1000` is killed at the timeout and the loop continues (docker)
-- [ ] Ctrl+C during `sleep 1000 & sleep 1000` leaves nothing running but PID 1 in the container (zombies aside) before the diff is taken, then goes to review (docker)
-- [ ] Ctrl+C while a reply is streaming goes to review without appending the partial reply (unit)
-- [ ] With the context threshold set to 5,000, the task stops, says the context is full and goes to review (unit)
-- [ ] Discarding leaves your repo unchanged; a failed `git apply --check` leaves it unchanged and saves the patch (docker)
-- [ ] Normal exit, Ctrl+C and a crash all leave no `coding-agent` container running (`docker ps --filter label=coding-agent=1`) and write a trajectory (docker)
+- [x] `rm -rf /workspace` inside the container leaves your repo unchanged, and the review still works and shows every file deleted (docker)
+- [x] A request to `https://example.com` fails (docker; the image has no curl, so the test uses Python)
+- [x] A command containing `"; touch /tmp/pwned` never creates `/tmp/pwned` on the host (docker)
+- [x] `yes` is cut off at the timeout with output capped at 10,000 characters, and the harness never holds more than the head, tail and count (docker)
+- [x] Run from a subfolder, the diff applies at the repo's top folder (docker)
+- [x] `false` returns `exit_code: 1` as a normal result, not `is_error` (unit)
+- [x] A tracked `.env`, an ignored `secrets.txt` and `.agent/` are all absent from `/workspace` (docker)
+- [x] `sleep 1000` is killed at the timeout and the loop continues (docker)
+- [x] Ctrl+C during `sleep 1000 & sleep 1000` leaves nothing running but PID 1 in the container (zombies aside) before the diff is taken, then goes to review (docker)
+- [x] Ctrl+C while a reply is streaming goes to review without appending the partial reply (unit)
+- [x] With the context threshold set to 5,000, the task stops, says the context is full and goes to review (unit)
+- [x] Discarding leaves your repo unchanged; a failed `git apply --check` leaves it unchanged and saves the patch (docker)
+- [x] Normal exit, Ctrl+C and a crash all leave no `coding-agent` container running (`docker ps --filter label=coding-agent=1`) and write a trajectory (docker)

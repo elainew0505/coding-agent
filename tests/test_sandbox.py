@@ -131,6 +131,16 @@ def test_huge_output_is_capped_with_head_and_tail(sb):
     assert "[truncated " in r.output
 
 
+def test_endless_output_is_cut_off_at_the_timeout_and_capped(sb):
+    # The cap is applied while reading, so even output that never ends stays small.
+    r = sb.run("yes", timeout=2)
+    assert r.exit_code == 124
+    assert r.timed_out
+    assert len(r.output) < 10_200
+    assert r.output.startswith("y\ny\n")
+    assert "[truncated " in r.output
+
+
 def test_ctrl_c_kills_everything_but_pid_1(sb):
     # Send ourselves Ctrl+C (SIGINT) while a command with a background job runs.
     threading.Timer(2, os.kill, (os.getpid(), signal.SIGINT)).start()

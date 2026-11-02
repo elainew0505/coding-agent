@@ -56,6 +56,22 @@ def quiet(*_):
     """Swallow printing."""
 
 
+def only_trajectory(repo):
+    """The one trajectory a run wrote, as a dict."""
+    [trajectory] = (repo / ".agent" / "trajectories").iterdir()
+    return json.loads(trajectory.read_text())
+
+
+def no_containers_left():
+    left = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", f"label={LABEL}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return left.stdout.strip() == ""
+
+
 # --- review (D2-D5) ----------------------------------------------------------
 
 
@@ -153,17 +169,35 @@ def test_end_to_end_with_a_scripted_model(image, repo, monkeypatch):
     assert main(["fix add"], model=model, image=image) == 0
 
     assert (repo / "app.py").read_text() == FIXED
-    [trajectory] = (repo / ".agent" / "trajectories").iterdir()
-    data = json.loads(trajectory.read_text())
+    data = only_trajectory(repo)
     assert (data["stop_reason"], data["outcome"]) == ("done", "applied")
     assert data["model"] == "claude-haiku-5-5"  # the default
-    left = subprocess.run(
-        ["docker", "ps", "-aq", "--filter", f"label={LABEL}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert left.stdout.strip() == ""
+    assert no_containers_left()
+
+
+def test_ctrl_c_mid_task_still_reviews_and_cleans_up(image, repo, monkeypatch):
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("builtins.input", answering("d"))
+    model = FakeModel(reply("sed -i 's/a - b/a + b/' app.py"), KeyboardInterrupt())
+
+    assert main(["fix add"], model=model, image=image) == 0
+
+    assert (repo / "app.py").read_text() == BROKEN  # discarded at the review
+    data = only_trajectory(repo)
+    assert (data["stop_reason"], data["outcome"]) == ("interrupted", "discarded")
+    assert no_containers_left()
+
+
+def test_crash_mid_task_still_cleans_up(image, repo, monkeypatch):
+    monkeypatch.chdir(repo)
+    model = FakeModel(reply("ls"), RuntimeError("bug in the harness"))
+
+    with pytest.raises(RuntimeError):
+        main(["fix add"], model=model, image=image)
+
+    assert (repo / "app.py").read_text() == BROKEN
+    assert only_trajectory(repo)["outcome"] == "not reviewed"
+    assert no_containers_left()
 
 
 # --- run by hand -------------------------------------------------------------
