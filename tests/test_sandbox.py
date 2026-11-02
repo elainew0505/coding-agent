@@ -43,6 +43,9 @@ from coding_agent.sandbox import (
         "id_rsa",
         "id_ed25519.pub",
         ".agent/logs/x.json",
+        ".ENV",  # case doesn't matter: macOS treats these as the same names
+        "certs/Server.PEM",
+        "deploy.KEY",
     ],
 )
 def test_secret_and_agent_paths_are_denied(path):
@@ -61,6 +64,17 @@ def test_outside_a_repo_is_refused(tmp_path):
 
 def test_repo_root_is_found_from_a_subfolder(repo):
     assert find_repo_root(repo / "sub") == repo.resolve()
+
+
+def test_kill_all_survives_a_hung_docker(monkeypatch):
+    sandbox = Sandbox("unused")
+    sandbox.started = True
+
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], 15)
+
+    monkeypatch.setattr(subprocess, "run", hang)
+    sandbox.kill_all()  # must not raise: the caller still goes on to review
 
 
 # --- real container ----------------------------------------------------------
@@ -177,6 +191,34 @@ def test_diff_still_works_after_rm_rf_workspace(sb):
     assert b"deleted file mode" in d.patch
     assert "app.py" in d.stat
     assert "notes.txt" in d.stat
+
+
+def test_edits_to_a_tracked_but_ignored_file_are_in_the_diff(image, repo):
+    # Force-added despite .gitignore: copied in, so its edits must show up too.
+    (repo / "ignored.txt").write_text("tracked anyway\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-f", "ignored.txt"], check=True)
+    with Sandbox(image) as sandbox:
+        sandbox.copy_in(repo)
+        sandbox.baseline()
+        sandbox.run("echo edited >> ignored.txt")
+        assert "ignored.txt" in sandbox.diff().stat
+
+
+def test_copy_in_survives_lots_of_tar_warnings(image, repo, monkeypatch):
+    # More than a pipe buffer (64 KB) of warnings used to deadlock copy-in.
+    real_popen = subprocess.Popen
+
+    def noisy_tar(argv, **kwargs):
+        if argv[0] == "tar":
+            script = 'yes "tar: warning" | head -c 200000 >&2; exec "$@"'
+            argv = ["bash", "-c", script, "bash", *argv]
+        return real_popen(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", noisy_tar)
+    with Sandbox(image) as sandbox:
+        done = threading.Event()
+        threading.Thread(target=lambda: (sandbox.copy_in(repo), done.set()), daemon=True).start()
+        assert done.wait(30), "copy-in deadlocked"
 
 
 def test_empty_diff_when_nothing_changed(sb):

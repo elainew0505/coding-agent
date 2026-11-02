@@ -132,8 +132,9 @@ def is_denied(path):
     parts = Path(path).parts
     if parts and parts[0] in DENY_DIRS:
         return True
-    name = parts[-1] if parts else ""
-    return any(fnmatch.fnmatch(name, pattern) for pattern in DENY_NAMES)
+    # Case-insensitive: on macOS `Server.PEM` and `server.pem` are the same file.
+    name = (parts[-1] if parts else "").lower()
+    return any(fnmatch.fnmatchcase(name, pattern.lower()) for pattern in DENY_NAMES)
 
 
 def list_repo_files(root):
@@ -282,29 +283,42 @@ class Sandbox:
             return report
 
         # The file list goes to tar through a temp file (NUL-separated), so odd
-        # names (spaces, newlines) are safe and there's no pipe deadlock.
+        # names (spaces, newlines) are safe. tar's warnings go to a temp file
+        # too: a pipe nobody reads until the end fills up and deadlocks.
         with tempfile.NamedTemporaryFile(delete=False) as f:
             f.write(b"\0".join(os.fsencode(p) for p in report.copied) + b"\0")
             list_file = f.name
         try:
             env = {**os.environ, "COPYFILE_DISABLE": "1"}  # macOS: no ._* files
-            pack = subprocess.Popen(
-                ["tar", "-c", "--no-xattrs", "--null", "--no-recursion", "-T", list_file],
-                cwd=root,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            assert pack.stdout and pack.stderr  # both are PIPE, so never None
-            unpack = subprocess.run(
-                ["docker", "exec", "-i", self.name, "tar", "-x", "--no-same-owner", "-C", WORKDIR],
-                stdin=pack.stdout,
-                capture_output=True,
-                check=False,
-            )
-            pack.stdout.close()
-            pack_err = pack.stderr.read()
-            pack.wait()
+            with tempfile.TemporaryFile() as errors:
+                pack = subprocess.Popen(
+                    ["tar", "-c", "--no-xattrs", "--null", "--no-recursion", "-T", list_file],
+                    cwd=root,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=errors,
+                )
+                assert pack.stdout  # it's a PIPE, so never None
+                unpack = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "-i",
+                        self.name,
+                        "tar",
+                        "-x",
+                        "--no-same-owner",
+                        "-C",
+                        WORKDIR,
+                    ],
+                    stdin=pack.stdout,
+                    capture_output=True,
+                    check=False,
+                )
+                pack.stdout.close()
+                pack.wait()
+                errors.seek(0)
+                pack_err = errors.read()
         finally:
             os.unlink(list_file)
 
@@ -321,7 +335,10 @@ class Sandbox:
     def baseline(self):
         """Snapshot /workspace in /harness.git. Call once, right after copy_in."""
         self._git("init", "-q")
-        self._git("add", "-A")
+        # --force: everything here was chosen by copy_in, including files the
+        # repo tracks despite .gitignore. Once in the baseline git diffs them
+        # like any tracked file; new ignored files still stay out of the diff.
+        self._git("add", "-A", "--force")
         self._git("commit", "-q", "--allow-empty", "-m", "baseline")
         self.baseline_sha = self._git("rev-parse", "HEAD").stdout.decode().strip()
         return self.baseline_sha
@@ -393,12 +410,15 @@ class Sandbox:
         Uses bash's built-in kill (the slim image has no kill program).
         """
         if self.started:
-            subprocess.run(
-                ["docker", "exec", "-w", "/", self.name, "bash", "-c", "kill -KILL -1"],
-                capture_output=True,
-                check=False,
-                timeout=15,
-            )
+            try:
+                subprocess.run(
+                    ["docker", "exec", "-w", "/", self.name, "bash", "-c", "kill -KILL -1"],
+                    capture_output=True,
+                    check=False,
+                    timeout=15,
+                )
+            except subprocess.TimeoutExpired:
+                pass  # Docker is hung; removing the container at exit still stops everything
 
     # --- internals ---------------------------------------------------------
 
