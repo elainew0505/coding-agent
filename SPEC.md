@@ -161,7 +161,7 @@ The MVP passes when every task test succeeds on a toy repo and every safety test
 - [ ] "What does this project do?" answered from reading files, with an empty diff
 - [ ] Fix a planted off-by-one bug so the failing test passes; the diff applies cleanly
 - [ ] Add a new function plus a test for it, and run the tests
-- [ ] Recover from a wrong first edit after seeing the test failure
+- [ ] Recover from a wrong first edit after seeing the test failure (the test plants a wrong fix, `range(start, end + 2)`, before the run, since a real model can't be made to get its first edit wrong)
 
 **Safety tests**
 

@@ -48,7 +48,7 @@ sandbox.py (S, D helpers)       ← exists; tested first
 
 ### Phase C: End to end
 - [x] Task 5: Review, apply, trajectory and the `coding-agent` command
-- [ ] Task 6: Live task tests (against `../toy-repo`) and README
+- [ ] Task 6: Live task tests (against `../toy-repo`) and README (code done; waiting on the user's first `--live` run)
 
 ### Checkpoint C
 - [ ] Every acceptance test in `SPEC.md` is checked off (live ones run by the user)

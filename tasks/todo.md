@@ -128,12 +128,12 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 **Description:** Live tests for the four task tests, run against the existing toy repo at `../toy-repo` (a sibling of this repo, with the planted off-by-one bug in `calc/ranges.py`). Each test copies the toy repo into `tmp_path` first, so the original is never changed. Skipped unless `--live` and a key are given; only the user runs them. Plus a README covering install, run and the security model in plain terms.
 
 **Acceptance criteria:**
-- [ ] `uv run pytest` skips the live tests; `uv run pytest --live` runs them (user only)
+- [x] `uv run pytest` skips the live tests; `uv run pytest --live` runs them (user only)
 - [ ] A live run saves one real reply to `tests/fixtures/`, and a unit test loads it as a `BetaMessage` (catches drift between the fake replies and the real SDK)
-- [ ] README says: build the image, install, run, add `.agent/` to `.gitignore`, keep Docker Desktop's disk limit below your free space, read the whole diff before applying
+- [x] README says: build the image, install, run, add `.agent/` to `.gitignore`, keep Docker Desktop's disk limit below your free space, read the whole diff before applying
 
 **Verification:**
-- [ ] All checks pass
+- [x] All checks pass
 - [ ] The user runs `uv run pytest --live` and the four task tests pass
 
 **Dependencies:** Task 5

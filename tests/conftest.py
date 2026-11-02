@@ -1,6 +1,8 @@
-"""Shared test setup: Docker detection, the --live option, a throwaway repo."""
+"""Shared test setup: Docker detection, the --live option, throwaway repos."""
 
+import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -63,3 +65,28 @@ def repo(tmp_path):
     _git(root, "add", "app.py", "sub", ".env", ".gitignore")
     _git(root, "commit", "-q", "-m", "init")
     return root
+
+
+# --- live tests (real API; only the user runs these) -------------------------
+
+TOY_REPO = Path(os.environ.get("TOY_REPO", Path(__file__).resolve().parents[2] / "toy-repo"))
+
+
+@pytest.fixture
+def live(request, image):
+    """Skips unless --live was passed and an API key is set. Needs Docker too."""
+    if not request.config.getoption("--live"):
+        pytest.skip("live test: pass --live to run (calls the real API, costs money)")
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        pytest.skip("live test: set ANTHROPIC_API_KEY")
+    return image
+
+
+@pytest.fixture
+def toy_repo(tmp_path):
+    """A fresh clone of the toy repo, so the real one is never changed."""
+    if not (TOY_REPO / ".git").exists():
+        pytest.skip(f"toy repo not found at {TOY_REPO} (set TOY_REPO)")
+    clone = tmp_path / "toy-repo"
+    subprocess.run(["git", "clone", "-q", str(TOY_REPO), str(clone)], check=True)
+    return clone
