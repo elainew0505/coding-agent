@@ -147,5 +147,5 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 ## Checkpoint C: every `SPEC.md` acceptance test checked off; review with the user; open the PR
 
 - [x] Every `SPEC.md` acceptance test checked off
-- [ ] Review the branch with the user
-- [ ] Open the PR
+- [x] Review the branch with the user
+- [x] Open the PR
