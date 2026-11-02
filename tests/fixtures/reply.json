@@ -1,0 +1,51 @@
+{
+  "id": "msg_011CgdEoxdBjkKqAs45SN3XP",
+  "container": null,
+  "content": [
+    {
+      "signature": "CAQSowUKEAgTGAI4AUIIdGhpbmtpbmcSDDNFrJ+l3HcFo04JVhoMinVJs5dXoRcWitqUIjAGz58dixWMTvD2QmLPsrV4lnbfmzy9i5nsKrq5f/TGsg/Hjh+eeeupQMO/a1dri9MqwASCIx+YEr3zeZNF2PGm7DI79D4Xtduj0IcIGmTql/Wx4Pd/ydQVHtpRVvCZLHXMZhSmdZkVmLh0an7qrnUeW18ukIa4KipB015T9+7RYoSQerQuarzIu5lSMgbU4yRq7ZdTR4h1chfPJa/R84sZUsyX/MMUa3PpC2f4Vb4yTln+7M2YYv/nOTa+smBqyzqw6OTZU1ToSvyBajfvasHBe6j48AGDd5CXtZB8o99M8lmSAJSUjilzeY1GI1+oqROtSI2i2GAtndrHKETQHnRmHex41X0hTK9fPtoFeFc2Bv77KC5Vqq9lb+p3t9wyzCQJlccb2riY5jGoCFbORsOiKozJsQuhprRaxxfVv46TvDsU3oXq/Jwklah8XY1hA5t0Ubynti5acKnQnQb0/k0RC+mFt6jU6H3JptB2oCGbAfivZ0d9kZ854rMGpAojuUZX8fkN56mjyz3oHV+jGKyXVab1C729y+OYimSMH4CxKlb0Y/1RDkdjjRERvIy/bjb1mVBxjZbFU+A2IJ+CXWP1xO+d6MMKTL3D7UcSho2cshy4jpamMkOnMpL1xfAAAelTrh/Cp+uDm5u1U/KnHtLqPFVi/rOq6SMyLkmkozBG4RfaKwGilixSNWIpBW4TMh/V/bU2nYP2wNTDRgln4tRfkSIwPy6TdQj4FOtq4R+ZGnmnI4APd8+A0B65GvzKRrNsccabIa5jy8kcyK4pLnHe972FLD8tyhFxSJGB6kuKA32owJ+55poCgnhRcaiLpeLW3/sYAQ==",
+      "thinking": "",
+      "type": "thinking"
+    },
+    {
+      "id": "toolu_01TbmnYHZvAE1gdTDKUzJ2vB",
+      "input": {
+        "command": "cd /workspace && ls -la && find . -maxdepth 2 -type f -not -path '*/.git/*' | head -100 && cat README* 2>/dev/null | head -100"
+      },
+      "name": "run_command",
+      "type": "tool_use",
+      "caller": {
+        "type": "direct"
+      },
+      "toolset_name": null
+    }
+  ],
+  "context_management": null,
+  "diagnostics": null,
+  "model": "claude-haiku-5-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 814
+    },
+    "cache_creation_input_tokens": 814,
+    "cache_read_input_tokens": 0,
+    "fallback_credit": null,
+    "inference_geo": "global",
+    "input_tokens": 4,
+    "iterations": null,
+    "output_tokens": 132,
+    "output_tokens_details": {
+      "thinking_tokens": 25
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": "standard"
+  },
+  "input_transformations": null
+}

@@ -129,12 +129,12 @@ uv run pytest && uv run pyright && uv run ruff check . && uv run ruff format --c
 
 **Acceptance criteria:**
 - [x] `uv run pytest` skips the live tests; `uv run pytest --live` runs them (user only)
-- [ ] A live run saves one real reply to `tests/fixtures/`, and a unit test loads it as a `BetaMessage` (catches drift between the fake replies and the real SDK)
+- [x] A live run saves one real reply to `tests/fixtures/`, and a unit test loads it as a `BetaMessage` (catches drift between the fake replies and the real SDK)
 - [x] README says: build the image, install, run, add `.agent/` to `.gitignore`, keep Docker Desktop's disk limit below your free space, read the whole diff before applying
 
 **Verification:**
 - [x] All checks pass
-- [ ] The user runs `uv run pytest --live` and the four task tests pass
+- [x] The user runs `uv run pytest --live` and the four task tests pass
 
 **Dependencies:** Task 5
 
