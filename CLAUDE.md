@@ -2,7 +2,14 @@
 
 A coding agent written in Python: a CLI that takes a task, calls Claude through the Anthropic API in a tool-use loop, and edits files and runs commands in a sandboxed workspace.
 
-Status: MVP built (`SPEC.md`); `tasks/todo.md` has what's left. Change the spec before changing behaviour.
+## Where things stand
+
+Phase 0 (MVP) is done (PR #7): see `SPEC.md` for what it does, its accepted limitations (§ Review and apply) and later phases (§ Scope). Not obvious from the code:
+
+- `run_task` takes a `Run` that `main()` holds, so a crash still saves the history.
+- Print anything from the model or sandbox through `visible()`, so escape codes can't hide lines of the diff.
+- The image is `python:3.12-slim`: no `curl`, no `kill` program. After changing the `Dockerfile`, run `docker build -t coding-agent:toy .`.
+- Test files import `fakes` directly (no `tests/__init__.py`), so each also runs by hand: `uv run python tests/test_x.py [filter | --list]`.
 
 ## Stack
 
@@ -15,8 +22,6 @@ Status: MVP built (`SPEC.md`); `tasks/todo.md` has what's left. Change the spec 
 - Docker as the sandbox for every command the model runs
 
 ## Commands
-
-Once `pyproject.toml` exists:
 
 ```bash
 uv sync                      # install deps
