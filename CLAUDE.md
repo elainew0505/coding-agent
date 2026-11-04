@@ -78,6 +78,7 @@ No separate architecture doc: the spec, decision records and this file cover it.
 - Make the smallest change that solves the task. Take code out before adding more, and don't refactor or add features nobody asked for.
 - Work in thin slices: one failing test, the minimal fix, then check before the next step.
 - Every code change is incremental and needs the user's approval first: before each slice, briefly say what will change and why, and wait for a yes. Don't chain slices without asking.
+- In discussion, ask the user one thing at a time: raise one question or review point, wait for the answer, act on it, then move to the next. Don't list every finding at once.
 - Before starting a task, read `SPEC.md` and `tasks/todo.md`. Change the spec before changing a decision recorded in it.
 
 ## Skills
