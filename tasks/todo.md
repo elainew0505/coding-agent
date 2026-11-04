@@ -23,7 +23,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 **Acceptance criteria:**
 - [ ] A path or content holding `"; touch /tmp/pwned`, `$(…)` or backticks is written exactly and creates no `/tmp/pwned*`, on the host or in the container (docker)
 - [ ] A file written by relative path with `write_file` reads back with `run_command` `cat <path>` (docker)
-- [ ] `read_file` on a 50 MB file holds at most 1,000,001 bytes and says the file was cut; line ranges, empty files, a `start_line` past the end and a missing file each give the result the spec says
+- [ ] `read_file` on a 50 MB file holds at most 1,000,001 bytes and says the file was cut, pointing to `run_command`, also when `start_line` is past the cut; line ranges, empty files, a `start_line` past the end and a missing file each give the result the spec says
 - [ ] Each schema agrees with its pydantic model (unit test)
 
 **Verification:**
