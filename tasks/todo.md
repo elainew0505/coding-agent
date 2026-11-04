@@ -251,11 +251,12 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 8: The eval runner and `coding-agent eval`
 
-**Description:** `eval/runner.py` runs the selected tasks one after another, each in a fresh container, into `runs/<run id>/` (`meta.json`, `predictions-1.jsonl`, `trajectories/1/`). Resume (R4): skip tasks already in the predictions file. Clean Ctrl+C (R5): stop the current task, remove its container, end the run without recording it. CLI: `coding-agent eval [--model ID] [--bash-only] [--limit N | --instances ID,...] [--run-id ID]`; `--bash-only` picks the `bash` tool set from FT3 (A1). `runs/` is git-ignored.
+**Description:** `eval/runner.py` runs the selected tasks one after another, each in a fresh container, into `runs/<run id>/` (`meta.json`, `predictions-1.jsonl`, `trajectories/1/`). Resume (R4): skip tasks already in the predictions file or in `errors.jsonl`. A Setup failure is written to `errors.jsonl` with the reason, and the run moves on to the next task. Clean Ctrl+C (R5): stop the current task, remove its container, end the run without recording it. CLI: `coding-agent eval [--model ID] [--bash-only] [--limit N | --instances ID,...] [--run-id ID]`; `--bash-only` picks the `bash` tool set from FT3 (A1). `runs/` is git-ignored.
 
 **Acceptance criteria:**
 - [ ] `meta.json` records model, tool set, settings, agent git commit, dataset revision, harness version and the task list; resuming with a different model or tool set is refused
 - [ ] A run stopped after 2 of 4 tasks resumes and runs only the other 2 (unit test, fake model and sandbox)
+- [ ] A task whose image is missing goes into `errors.jsonl`, the next task still runs, and a resume doesn't try it again (unit test)
 - [ ] After Ctrl+C, no container from the run is left running, and the interrupted task isn't in the predictions file (Docker test)
 
 **Verification:**
@@ -293,7 +294,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 10: Grading and the report
 
-**Description:** After all tasks, the runner calls `grade.py` on the predictions file (`--run_id <run id>-t1`, `--namespace ''` on Apple Silicon) and keeps the harness's logs in `runs/<run id>/harness/`. `eval/report.py` joins the grades with each trajectory into `report.md` and `results.json`: resolved count and percentage, empty patches and errors listed by task, total and per-task cost, median calls and time, stop reason counts. Errors are reported separately, never as agent failures.
+**Description:** After all tasks, the runner calls `grade.py` on the predictions file (`--run_id <run id>-t1`, `--namespace ''` on Apple Silicon) and keeps the harness's logs in `runs/<run id>/harness/`. `eval/report.py` joins the grades with each trajectory into `report.md` and `results.json`: resolved count and percentage, empty patches and errors listed by task (Setup errors from `errors.jsonl` included, counted as not resolved), total and per-task cost, median calls and time, stop reason counts. Errors are reported separately, never as agent failures.
 
 **Acceptance criteria:**
 - [ ] Report maths on a saved set of trajectories and harness results gives the expected figures (unit test)

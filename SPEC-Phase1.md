@@ -139,7 +139,7 @@ The proof that this group works is the fake-model test (Testing): a fake model w
 | A2 | **Context limit** 90,000 input tokens for Haiku 5.5 (below its 100,000-token price step), counted as in L5. It is checked before each request is sent, not only after the response: the estimate is the last response's input total, plus its output tokens, plus the characters of the new tool results divided by 3.5. If the estimate is over the limit, the task stops with stop reason `context limit` without sending, so no request can cross the price step after one turn with many large tool results | Requests crossing Haiku's fivefold price step | First: L5's after-response check. Later: the pre-send estimate |
 | R2 | **Context limit per model**, in `config.py`: 90,000 for Haiku 5.5 (A2), the MVP's 150,000 otherwise | One limit that's wrong for some models | First |
 | R3 | **Price table** per model in `config.py`; cost per task in the trajectory and the report, and the `--max-cost` guard (cost rule 5) | Not knowing what a run cost; a bug burning the budget | First |
-| R4 | **Resume:** on start, skip every task already in the trial's predictions file | Paying again from the start after a crash | First |
+| R4 | **Resume:** on start, skip every task already in the trial's predictions file or in `errors.jsonl`. A task whose Setup fails (missing image, container or baseline failing) goes into `errors.jsonl` with the reason, and the run moves on; delete its line to retry it | Paying again from the start after a crash | First |
 
 **Cost rules** (all First):
 
@@ -172,7 +172,7 @@ Per run, in `report.md` and `results.json`:
 | Field | Meaning | Build |
 | --- | --- | --- |
 | Resolved | Count and percentage of the task list (pass@1; with `--trials k`, the average and the share solved in all k trials) | First (trial figures Later) |
-| Empty patches, errors | Counts, listed by task | First |
+| Empty patches, errors | Counts, listed by task. Setup errors from `errors.jsonl` are listed too and count as not resolved, so the percentage is always of the whole task list | First |
 | Cost | Total and per task | First |
 | Calls, time | Median per task | First |
 | Stop reasons | Count of each | First |
@@ -199,6 +199,7 @@ Everything for a run lives in `runs/<run id>/` in the coding-agent repo (git-ign
 runs/<run id>/
   meta.json                  # model, tool set (T1), settings, agent git commit, dataset revision, harness version, task list
   predictions-<trial>.jsonl  # one line per task, appended as each finishes (trial 1 with the default --trials 1)
+  errors.jsonl               # tasks whose Setup failed, with the reason (R4)
   trajectories/<trial>/      # <instance_id>.json, same format as the MVP trajectory
   harness/                   # the official harness's logs and results
   report.md                  # the summary
