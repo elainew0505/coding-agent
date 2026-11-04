@@ -44,12 +44,11 @@ MVP behind Setup/Finish seams (no behaviour change)
 
 `read_file`, `write_file` and `edit_file` next to `run_command`, on by default, `--bash-only` to turn them off. They come first so the eval measures the agent with them, and `eval-compare` against `--bash-only` shows whether they help. Each slice is approved by the user before it starts (CLAUDE.md § Working style).
 
-- [ ] Task F1: Sandbox reads and writes file bytes
-- [ ] Task F2: `read_file` and `write_file`
-- [ ] Task F3: `edit_file`
-- [ ] Task F4: Tool sets and `--bash-only`
+- [ ] Task FT1: `read_file` and `write_file`, with the sandbox methods they need
+- [ ] Task FT2: `edit_file`
+- [ ] Task FT3: Tool sets and `--bash-only`
 
-### Checkpoint F
+### Checkpoint FT
 - [ ] The File tools acceptance tests in `SPEC.md` are checked off
 - [ ] Review with the user, then open the PR
 
@@ -106,8 +105,8 @@ MVP behind Setup/Finish seams (no behaviour change)
 | The conda environment isn't active in `docker exec … bash -lc` | Med | Task 5 checks how the images activate it, with a Docker test that imports the repo's package |
 | `swebench` or `datasets` brings in a risky dependency tree | Med | Supply-chain check in Task 1 before they're added; both stay in the optional extra |
 | Haiku 5.5 prices or its 100,000-token price step differ from the spec | Med | Task 9 takes prices from the current docs, not memory |
-| A model-chosen path or file content reaches a shell (file tools) | High | Paths are separate arguments after `--` or `"$1"`, content goes on stdin; Docker tests in F1 try `"; touch /tmp/pwned"`, `$(…)` and backticks |
-| F4 and Task 3 both change what `Model` takes | Low | F4 adds the tool set; Task 3 builds on it rather than redoing it |
+| A model-chosen path or file content reaches a shell (file tools) | High | Paths are separate arguments after `--` or `"$1"`, content goes on stdin; Docker tests in FT1 try `"; touch /tmp/pwned"`, `$(…)` and backticks |
+| FT3 and Task 3 both change what `Model` takes | Low | FT3 adds the tool set; Task 3 builds on it rather than redoing it |
 | A full run costs more than `--max-cost` expects | Med | Task 12 runs 3 tasks first; the guard stops new tasks at the limit and the run resumes |
 
 ## Open questions
