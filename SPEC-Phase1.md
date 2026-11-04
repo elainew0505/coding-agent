@@ -165,7 +165,7 @@ The proof that this group works is the fake-model test (Testing): a fake model w
 | — | **Baseline:** run mini-swe-agent once on the same 50 tasks with the same model and record its resolved count and cost in the first report | Not knowing whether a gap comes from the harness or the model | Later |
 | — | **`coding-agent eval-compare <run A> <run B>`:** prints both summaries side by side and the tasks that flipped between resolved and unresolved. With 50 tasks, a difference of two or three tasks can be noise; repeat with `--trials` before trusting it | Seeing totals without knowing which tasks changed | Later |
 
-**Metrics and report.** Per task, taken from the trajectory and the harness result: outcome (resolved, unresolved, empty patch or error); model calls; input tokens (fresh, cache read, cache write) and output tokens; cost from the price table, wall time, stop reason, patch size in lines.
+**Metrics and report.** Per task, taken from the trajectory and the harness result: outcome (resolved, unresolved, empty patch or error); model calls; input tokens (fresh, cache read, cache write) and output tokens; peak context (the largest input of any one call, from the usage the API returns); cost from the price table, wall time, stop reason, patch size in lines.
 
 Per run, in `report.md` and `results.json`:
 
@@ -176,6 +176,7 @@ Per run, in `report.md` and `results.json`:
 | Cost | Total and per task | First |
 | Calls, time | Median per task | First |
 | Stop reasons | Count of each | First |
+| Peak context | Highest and median per task, next to the context limit (R2), so the first run shows whether the limit is too low or never reached | First |
 
 ## Reference
 

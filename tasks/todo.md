@@ -294,7 +294,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 10: Grading and the report
 
-**Description:** After all tasks, the runner calls `grade.py` on the predictions file (`--run_id <run id>-t1`, `--namespace ''` on Apple Silicon) and keeps the harness's logs in `runs/<run id>/harness/`. `eval/report.py` joins the grades with each trajectory into `report.md` and `results.json`: resolved count and percentage, empty patches and errors listed by task (Setup errors from `errors.jsonl` included, counted as not resolved), total and per-task cost, median calls and time, stop reason counts. Errors are reported separately, never as agent failures.
+**Description:** After all tasks, the runner calls `grade.py` on the predictions file (`--run_id <run id>-t1`, `--namespace ''` on Apple Silicon) and keeps the harness's logs in `runs/<run id>/harness/`. `eval/report.py` joins the grades with each trajectory into `report.md` and `results.json`: resolved count and percentage, empty patches and errors listed by task (Setup errors from `errors.jsonl` included, counted as not resolved), total and per-task cost, median calls and time, stop reason counts, and the highest and median peak context per task next to the context limit (R2). Errors are reported separately, never as agent failures.
 
 **Acceptance criteria:**
 - [ ] Report maths on a saved set of trajectories and harness results gives the expected figures (unit test)
