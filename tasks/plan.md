@@ -1,68 +1,116 @@
-# Implementation Plan: coding-agent MVP (Phase 0)
+# Implementation Plan: Phase 1, evaluation
 
-Implements [SPEC.md](../SPEC.md). Tasks, acceptance criteria and verification are in [todo.md](todo.md). One commit per task on `feature/mvp`; the user approves each before the next starts.
+Implements [SPEC-Phase1.md](../SPEC-Phase1.md). Tasks, acceptance criteria and verification are in [todo.md](todo.md). Phase 0's plan is in [archive/](archive/). One commit per task; the user approves each before the next starts.
 
 ## Overview
 
-`coding-agent "<task>"` copies your repo into a locked-down container, lets Claude work through one `run_command` tool until it's done or hits a limit, then shows the diff and applies it to your repo only if you say so. Modelled on mini-swe-agent: one task per run, bash only, a fresh shell per command, a linear history saved as a trajectory.
+`coding-agent eval` runs the agent on the 50 tasks of SWE-bench Verified Mini, each in its own SWE-bench image, records one patch per task, grades the patches with the official harness and writes a report of resolved count, cost and calls. The agent is the MVP's, behind two seams: ImageSetup gets the task in, RecordPrediction gets the patch out ([0003](../docs/decisions/0003-setup-and-finish-modes.md)).
+
+The spec tags every rule **First** or **Later**. Phases A–C build everything First and end with the first trustworthy numbers; Phase D is the Later work, done after the first real run.
 
 ## Architecture decisions
 
-- Copy in, diff out, no mounts: [0002](../docs/decisions/0002-copy-in-diff-out.md)
-- The sandbox, not per-command approval, is the safety boundary: [0001](../docs/decisions/0001-sandbox-instead-of-approvals.md)
-- Native tool calling with a custom stateless `run_command`, not the Anthropic-defined `bash` tool (`SPEC.md` intro)
-- Minimal stack: `anthropic` and `pydantic` only; config is constants (`CLAUDE.md` § Stack)
-- Code style follows `src/sandbox.py`: plain functions, small dataclasses, constants at the top, short comments naming the spec rule
+- Setup → shared loop and sandbox → Finish: [0003](../docs/decisions/0003-setup-and-finish-modes.md). The MVP is moved behind the seams first, with no change in behaviour
+- Grading only by the official SWE-bench harness, never our own grader (`SPEC-Phase1.md` § Grading)
+- `swebench` and `datasets` in an optional `eval` extra; the `coding-agent` command alone keeps `anthropic` and `pydantic` only
+- Copy-in, diff-out stays the MVP's design ([0002](../docs/decisions/0002-copy-in-diff-out.md)); ImageSetup only skips copy-in because no host files enter the container
 
 ## Dependency graph
 
 ```
-sandbox.py (S, D helpers)       ← exists; tested first
+eval extra + dataset loader
     │
-    ├── tools.py + config.py    (run_command: validation, result text)
+    └── gold check (harness on gold patches)        ← fail fast: images, grading, exclusions
+            │
+MVP behind Setup/Finish seams (no behaviour change)
+    │
+    ├── ImageSetup: image, /testbed, conda, limits, clean history, baseline
     │       │
-    │       └── agent.py loop   (L rules, fake client)
-    │               │
-    │               └── review, apply, trajectory, __main__.py (D rules, CLI)
-    │                       │
-    │                       └── live tests on ../toy-repo, README
+    │       ├── eval prompt + tool description
+    │       │
+    │       └── RecordPrediction ── fake model writes the gold fix → harness resolves it
+    │                   │
+    │                   └── runner: run folder, resume, Ctrl+C, `coding-agent eval`
+    │                           │
+    │                           ├── cost: price table, per-model context limit, --max-cost
+    │                           └── grade + report
+    │                                   │
+    │                                   └── live runs (user) ── Phase D (Later)
 ```
 
 ## Task list
 
-### Phase A: Foundation
-- [x] Task 1: uv project and the sandbox module
-- [x] Task 2: Docker safety tests for the sandbox
+### Before Phase A: File tools (`SPEC.md` § File tools, [0004](../docs/decisions/0004-file-tools.md))
+
+`read_file`, `write_file` and `edit_file` next to `run_command`, on by default, `--bash-only` to turn them off. They come first so the eval measures the agent with them, and `eval-compare` against `--bash-only` shows whether they help. Each slice is approved by the user before it starts (CLAUDE.md § Working style).
+
+- [ ] Task FT1: `read_file` and `write_file`, with the sandbox methods they need
+- [ ] Task FT2: `edit_file`
+- [ ] Task FT3: Tool sets and `--bash-only`
+
+### Checkpoint FT
+- [ ] The File tools acceptance tests in `SPEC.md` are checked off
+- [ ] Review with the user, then open the PR
+
+### Phase A: Foundation (fail fast)
+- [ ] Task 1: The `eval` extra and the dataset loader
+- [ ] Task 2: The gold check
+- [ ] Task 3: Sandbox and model take their settings from the caller
+- [ ] Task 4: `modes.py`: the MVP as CopyInSetup and ReviewAndApply
 
 ### Checkpoint A
-- [x] `uv run pytest` passes with Docker running; every S-rule safety test is green
+- [ ] The gold check has run, and `evals/exclusions.txt` lists every task that failed, with reasons
+- [ ] Every MVP test passes unchanged
 - [ ] Review with the user
 
-### Phase B: The loop
-- [x] Task 3: `run_command` tool and config
-- [x] Task 4: Agent loop and model wrapper
+### Phase B: One task end to end
+- [ ] Task 5: ImageSetup on one real task image
+- [ ] Task 6: Eval prompt and tool description
+- [ ] Task 7: RecordPrediction, and the gold fix through `run_command`
 
 ### Checkpoint B
-- [x] Unit tests cover L1–L9 with the fake model and fake client
+- [ ] On one task, a fake model writes the gold fix through `run_command`, and the official harness resolves the recorded patch
 - [ ] Review with the user
 
-### Phase C: End to end
-- [x] Task 5: Review, apply, trajectory and the `coding-agent` command
-- [ ] Task 6: Live task tests (against `../toy-repo`) and README (code done; waiting on the user's first `--live` run)
+### Phase C: A full run (completes First)
+- [ ] Task 8: The eval runner and `coding-agent eval`
+- [ ] Task 9: Cost: price table, per-model context limit, `--max-cost`
+- [ ] Task 10: Grading and the report
+- [ ] Task 11: Fake-model runs over every task
+- [ ] Task 12: Live runs and the README (run by the user)
 
 ### Checkpoint C
-- [ ] Every acceptance test in `SPEC.md` is checked off (live ones run by the user)
+- [ ] Every **First** acceptance test in `SPEC-Phase1.md` is checked off (live ones run by the user)
 - [ ] Review with the user, then open the PR
+
+### Phase D: Later (after the first real run)
+- [ ] Task 13: Pre-send context estimate (A2)
+- [ ] Task 14: Per-run labels (R1)
+- [ ] Task 15: Trials (A6)
+- [ ] Task 16: `eval-compare`
+- [ ] Task 17: mini-swe-agent baseline (run by the user)
+- [ ] Task 18: A full run on AWS Spot (run by the user)
+
+### Checkpoint D
+- [ ] Every acceptance test in `SPEC-Phase1.md` is checked off
+- [ ] Review with the user
 
 ## Risks and mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Docker behaviour differs between Docker Desktop on macOS and Linux (tar flavour, process handling) | High | Task 2 runs every sandbox rule against a real container before anything builds on it |
-| `docker exec` doesn't return while a background process holds its output open | Med | A Docker test with `sleep 1000 &`; if it hangs, redirect or kill in `run` |
-| Claude edits files poorly through bash alone | Med | Live task tests in Task 6; a structured `edit_file` tool is Phase 1 if needed |
-| API details (effort, caching, streaming) differ from what the spec assumes | Med | Checked against the current docs in Task 4; the first live run (Task 6) confirms them for real |
+| SWE-bench images don't build or run well on Apple Silicon | High | Task 2 runs the gold check before any agent code; failures go to the exclusion list (E4); full runs move to x86 if too many fail |
+| The official fixes don't resolve inside our lockdown flags (`--network none`, memory, pids) | High | Task 7 runs the gold fix through our own sandbox on one task; Task 11 on all of them; limits are Setup values (M4) |
+| Moving the MVP behind the seams breaks it quietly | High | Tasks 3–4 change no behaviour, and every MVP test must pass unchanged |
+| The conda environment isn't active in `docker exec … bash -lc` | Med | Task 5 checks how the images activate it, with a Docker test that imports the repo's package |
+| `swebench` or `datasets` brings in a risky dependency tree | Med | Supply-chain check in Task 1 before they're added; both stay in the optional extra |
+| Haiku 5.5 prices or its 100,000-token price step differ from the spec | Med | Task 9 takes prices from the current docs, not memory |
+| A model-chosen path or file content reaches a shell (file tools) | High | Paths are separate arguments after `--` or `"$1"`, content goes on stdin; Docker tests in FT1 try `"; touch /tmp/pwned"`, `$(…)` and backticks |
+| FT3 and Task 3 both change what `Model` takes | Low | FT3 adds the tool set; Task 3 builds on it rather than redoing it |
+| A full run costs more than `--max-cost` expects | Med | Task 12 runs 3 tasks first; the guard stops new tasks at the limit and the run resumes |
 
 ## Open questions
 
-- The three safety additions (flag deletions and auto-run files, strip control characters, cap the diff) are not yet in the spec
+- Which small, fast instance is the Docker tests' task image (Task 5)?
+- How do SWE-bench images activate the `testbed` environment: `~/.bashrc`, `/etc/profile.d`, or something else (Task 5)?
+- Which dataset revision and harness version to pin (Task 1)?

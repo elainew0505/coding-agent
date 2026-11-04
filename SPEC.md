@@ -1,8 +1,8 @@
 # MVP detailed requirement
 
-The MVP (Phase 0) is a command-line tool: `coding-agent "<task>"` runs one task, with Claude working through a single `run_command` tool inside a throwaway Docker container that holds a copy of your repo. Nothing touches your real repo until you review the final `git diff` and choose to apply it. It is done when it fixes a planted bug in a toy repo and the diff applies cleanly.
+The MVP (Phase 0) is a command-line tool: `coding-agent "<task>"` runs one task, with Claude working through a `run_command` tool and three file tools (§ File tools) inside a throwaway Docker container that holds a copy of your repo. Nothing touches your real repo until you review the final `git diff` and choose to apply it. It is done when it fixes a planted bug in a toy repo and the diff applies cleanly.
 
-The design follows [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent): one task per run, bash is the only tool, every command runs in a fresh shell, and the history is a plain linear list of messages saved at the end as a trajectory. One difference: Claude calls `run_command` through native tool calling instead of writing a bash block that the harness parses out of its text. That makes malformed output impossible and a task ends when Claude stops calling tools, so no completion marker is needed. We don't use the Anthropic-defined `bash` tool because its contract is a persistent shell session.
+The design follows [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent): one task per run, every command runs in a fresh shell, and the history is a plain linear list of messages saved at the end as a trajectory. One difference: Claude calls `run_command` through native tool calling instead of writing a bash block that the harness parses out of its text. That makes malformed output impossible and a task ends when Claude stops calling tools, so no completion marker is needed. We don't use the Anthropic-defined `bash` tool because its contract is a persistent shell session. Unlike mini-swe-agent, reading and editing files also have their own tools, so the model doesn't have to get `sed` and heredoc quoting right for every edit ([0004](docs/decisions/0004-file-tools.md)); `--bash-only` turns them off, so the eval can compare the two.
 
 ## Scope
 
@@ -10,14 +10,14 @@ The design follows [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
 
 - One task per run from the terminal, one user, one run at a time (S7 removes any other run's container)
 - Claude through the Anthropic Python SDK, using native tool calling
-- One tool, `run_command`, executed inside a Docker container with no network
+- `run_command` plus three file tools (`read_file`, `write_file`, `edit_file`), all executed inside a Docker container with no network
 - Your repo copied into the container at the start; changes leave only as a diff you review
 - Ctrl+C to stop the task at any time
 - Nothing in the workspace configures the agent: no config, instruction or hook file in your repo is read by the harness. A repo you point the agent at must not be able to change its limits or behaviour (see [0001](docs/decisions/0001-sandbox-instead-of-approvals.md))
 
 **Out of scope (later phases)**
 
-- Benchmark suite, structured `edit_file` tool if bash edits prove unreliable (Phase 1)
+- Benchmark suite (Phase 1, see [SPEC-Phase1.md](SPEC-Phase1.md))
 - Follow-up tasks in one session (a REPL), todo lists, project instruction files, history summaries (Phase 2)
 - Git branch and commit on your repo, network access per command, auto-approve rules (Phase 3). Until there's network, the agent image only has the toy repo's dependencies (S1)
 - MCP, sub-agents, session resume, TUI (Phase 4)
@@ -27,7 +27,7 @@ The design follows [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)
 1. **Start:** `coding-agent [--model ID] "<task>"` anywhere in your repo starts a labelled container from the agent image. The harness works from the repo's top folder (`git rev-parse --show-toplevel`) for every host step, because `git apply` reads patch paths relative to it.
 2. **Copy in:** the files git would track (tracked, plus untracked ones `.gitignore` doesn't exclude), minus `.agent/` and a deny list of secret files, are streamed into `/workspace` in the container.
 3. **Baseline:** the harness (not the model) creates a git repo at `/harness.git`, outside the workspace, and commits a baseline.
-4. **Loop:** Claude calls `run_command` until it stops asking for tools or a limit is hit; each command and a short output preview print as they run.
+4. **Loop:** Claude calls `run_command` and the file tools until it stops asking for tools or a limit is hit; each call and a short output preview print as they run.
 5. **Diff out:** the harness stages everything and takes `git diff --cached --binary <baseline>`.
 6. **Review:** you see a file summary and the full diff, then choose apply or discard.
 7. **Apply:** `git apply --check`, then `git apply` on your real repo.
@@ -55,7 +55,7 @@ The agent runs as root inside the container. That is fine here: with no mounts, 
 
 | ID | Requirement |
 | --- | --- |
-| L1 | All model calls go through one thin wrapper, `Model.query(messages)` in `model.py`; the loop never touches the SDK. `Model(name)` works with any current model: the default is `claude-haiku-5-5` (the cheapest), and `--model claude-opus-5-5` picks the strongest for one run. Each call sends the system prompt, full message history and the `run_command` tool as a streaming request (`client.beta.messages.stream(...)` + `get_final_message()`, which avoids timeouts on long replies), with `output_config.effort` set explicitly (default `medium`), top-level `cache_control: {type: "ephemeral"}` so the growing history is cached, and, only for models that have one (Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5; not Haiku 5.5), `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) so a safety-classifier refusal is retried on Anthropic's recommended fallback model. Without a fallback, a refusal stops the task (L3). `eager_input_streaming` is off: the tool's input is one short command, and leaving it off keeps the server's input validation |
+| L1 | All model calls go through one thin wrapper, `Model.query(messages)` in `model.py`; the loop never touches the SDK. `Model(name)` works with any current model: the default is `claude-haiku-5-5` (the cheapest), and `--model claude-opus-5-5` picks the strongest for one run. Each call sends the system prompt, full message history and the run's tool set (§ File tools) as a streaming request (`client.beta.messages.stream(...)` + `get_final_message()`, which avoids timeouts on long replies), with `output_config.effort` set explicitly (default `medium`), top-level `cache_control: {type: "ephemeral"}` so the growing history is cached, and, only for models that have one (Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5; not Haiku 5.5), `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) so a safety-classifier refusal is retried on Anthropic's recommended fallback model. Without a fallback, a refusal stops the task (L3). `eager_input_streaming` is off: the tool's input is one short command, and leaving it off keeps the server's input validation |
 | L2 | Append the full response content as the assistant message, then act on `stop_reason`. `tool_use`: run each tool call in order and send all the results, in the same order, in a single user message |
 | L3 | `end_turn`: the task is done; print the final text and go to review. Any other `stop_reason` (e.g. `max_tokens`, `refusal`) ends the task with a message naming it, then goes to review, even if the reply contains a tool call, since it may be cut off |
 | L4 | Stop after 50 model calls, tell the user the cap was hit, and still go to review |
@@ -77,16 +77,30 @@ The agent runs as root inside the container. That is fine here: with no mounts, 
 | On timeout | The in-container `timeout` kills the command (exit 124); the host gets `timeout + 10` as a backstop |
 | Approval | None per command; the diff review is the checkpoint |
 
-The tool description tells the model:
+The tool description names no folder and no git rule, so the same text works in every mode (§ First message). It tells the model:
 
-- Each call starts a fresh shell in `/workspace`; `cd` does not carry over, so chain with `&&`
+- Each call starts a fresh shell in the working folder; `cd` does not carry over, so chain with `&&`
 - There is no network: no `pip install`, `curl` or `git clone`
-- Edit files with heredocs (`cat <<'EOF' > file`), `sed -i` or a short Python script
-- `/workspace` is not a git repo and must not become one: don't run `git init` anywhere in it; the harness tracks changes itself
+- With `--bash-only`: edit files with heredocs (`cat <<'EOF' > file`), `sed -i` or a short Python script. With all tools: read and edit files with the file tools, and use `run_command` for everything else
 
 The in-container `timeout` matters: killing the host-side `docker exec` alone leaves the command running inside the container. For the same reason, on Ctrl+C or when the host backstop fires, the harness runs `docker exec agent-<id> bash -c 'kill -KILL -1'` (the slim image has no `kill` program, only the shell builtin). That kills every process in the container except PID 1 (`sleep infinity`), including anything the command started in the background, so nothing is still writing files when the diff is taken.
 
 Known limitation: PID 1 is `sleep`, which never reaps orphaned processes, so killed background processes stay as zombies and count toward `--pids-limit 256`. In a 50-call run that is a handful at most. `docker run --init` would reap them, but then `kill -1` would also kill `sleep infinity` and stop the container.
+
+## File tools
+
+Three tools for reading and editing files, next to `run_command` ([0004](docs/decisions/0004-file-tools.md)). Each one runs inside the container through `docker exec` with an argument list, like `run_command`; the file's bytes pass through the host process's memory, but nothing is written to or read from your disk. Each has a pydantic input model and a hand-written `input_schema`, checked against each other by a unit test.
+
+| ID | Requirement |
+| --- | --- |
+| T1 | **Tool sets.** By default every request sends all four tools, and the system prompt and `run_command` description name the file tools. `--bash-only` sends `run_command` alone, with a system prompt and description that name no file tools, so the eval can compare the two. The set is fixed for the whole run (byte-identical `tools` and `system`) and recorded in the trajectory |
+| T2 | **Paths.** Any path the model gives is relative to the working folder (`/workspace`) or absolute inside the container. It is passed unchanged as its own argument (after `--` or as `"$1"`), never inside a shell string, and the container resolves it: file-tool commands run with the same `docker exec -w` as `run_command`, so the host never joins paths and the working folder is set in one place. The container is the boundary, so paths outside the working folder are allowed there, as they are for `run_command` |
+| T3 | **`read_file`** `{path, start_line?, end_line?}`: returns the lines with their numbers (`cat -n` style). It reads at most 1,000,000 bytes (`head -c` in the container). Output stops at 10,000 characters and each line at 2,000, and a footer gives the lines shown, the total, and the `start_line` to continue from. When the file is longer than 1,000,000 bytes, the footer (or the error for a `start_line` past the cut) says only the first 1,000,000 bytes can be read and to use `run_command`, e.g. `sed -n '50000,50100p' <path>`, for later lines. A file with a NUL byte in its first 8,000 bytes is reported as binary, as an error |
+| T4 | **`write_file`** `{path, content}`: writes the whole file, creating it and any missing folders, or replacing it. Content is at most 1,000,000 characters. The bytes go in on `docker exec -i` stdin to `sh -c 'mkdir -p … && cat > "$1"'`, with the path as `$1`, so no part of the path or content is ever parsed as shell. Returns the line count written |
+| T5 | **`edit_file`** `{path, old_string, new_string, replace_all?}`: `old_string` must appear exactly once (or at least once with `replace_all`). Zero matches, more than one without `replace_all`, `old_string` equal to `new_string`, a file that isn't valid UTF-8, a file over 1,000,000 bytes, or a result over 1,000,000 bytes are `is_error` results that say what to do next. When nothing matches and the file contains `\r\n`, the error says the file uses CRLF line endings: put `\r\n` in `old_string` and `new_string`, or use `write_file`. Matching stays exact; line endings are never converted. The replace happens in host memory and the file is written back as in T4. Returns the edited lines with their numbers |
+| T6 | Every failure around a file tool (bad input, a missing file, Docker failing) is an `is_error` result with a short message, never a crash (L7). Each call prints one line, e.g. `read_file src/app.py:10-40` or `edit_file src/app.py`, through `visible()` |
+
+The `run_command` description (with all tools) says to use the file tools for reading and editing, and `run_command` for everything else: searching (`grep`, `find`), tests, scripts, git, package tools.
 
 ## Review and apply
 
@@ -102,7 +116,8 @@ Known limitation: PID 1 is `sleep`, which never reaps orphaned processes, so kil
 Known limitations, accepted for the MVP (none can change your repo without the review):
 
 - **Global ignore rules.** Copy-in (S4) also honours your global gitignore (`core.excludesFile`) and `.git/info/exclude`, but the container's harness git only sees the repo's `.gitignore`. Files the model creates that only your global rules ignore (e.g. a `.venv/`) show up in the diff; discard or ignore them in the repo's `.gitignore`.
-- **`/harness.git` is writable by the model.** It runs as root in the container, so it could delete the harness repo; the diff then fails and the run ends without a review. Your repo is unchanged; the run's work is lost.
+- **`/harness.git` is writable by the model.** It runs as root in the container, so it could delete the harness repo through `run_command` or the file tools, which don't guard it; the diff then fails and the run ends without a review. Your repo is unchanged; the run's work is lost.
+- **`read_file` stops at 1,000,000 bytes.** Later lines of a bigger file can only be read through `run_command`; the result says so (T3). The cap keeps the harness's memory bounded.
 - **A dead container.** If the container stops mid-run, each later command reports Docker's error as an ordinary non-zero exit, so the model may spend calls retrying before the run ends; the diff then fails and there is nothing to review.
 
 ## Output
@@ -113,17 +128,26 @@ Known limitations, accepted for the MVP (none can change your repo without the r
 
 ## System prompt
 
-A short, fixed text in `prompts.py` that tells the model:
+A short, fixed text in `prompts.py`, one per tool set (T1). It names no folder and says nothing about git or who checks the work, so the same text works in every mode: those facts are in the first message. It tells the model:
 
-- It is a coding agent working on a copy of the user's repo at `/workspace`, with no network
+- It is a coding agent working on a repo inside a container, with no network
+- Which tools it has: with all tools, to read and edit with the file tools and use `run_command` for everything else; with `--bash-only`, that `run_command` is its one tool
 - To explore (`ls`, `cat`, `grep`) before editing
 - To run the tests after a change when the repo has them
-- That the user reviews a diff of all its changes at the end, so it should keep changes focused
 - To finish with a short summary of what it changed and how it checked
+
+## First message
+
+The first user message holds the task and the facts of this mode, so `system` and `tools` stay the same in every mode and caching still hits. For `coding-agent` it says:
+
+- The repo is a copy of the user's repo at `/workspace`
+- `/workspace` is not a git repo and must not become one: don't run `git init` anywhere in it; the harness tracks changes itself
+- The user reviews a diff of every change at the end, so keep changes focused
+- Then the task, as the user typed it
 
 ## Trajectory
 
-- At the end of every run (in the same `finally` as S6), write one JSON file to `.agent/trajectories/<timestamp>.json` on the host: the task, system prompt, tool schema, full message history, total usage and stop reason. If the harness crashes mid-task, the history so far is still written, with stop reason `crashed`
+- At the end of every run (in the same `finally` as S6), write one JSON file to `.agent/trajectories/<timestamp>.json` on the host: the task, tool set name, system prompt, tool definitions, full message history, total usage and stop reason. If the harness crashes mid-task, the history so far is still written, with stop reason `crashed`
 - Never write the API key
 
 ## Project layout
@@ -137,7 +161,7 @@ src/coding_agent/
   agent.py        # agent loop, review prompt, trajectory
   model.py        # Model.query: the one place that calls the Anthropic API
   sandbox.py      # start, copy_in, exec, diff, cleanup
-  tools.py        # RunCommandInput, input_schema constant, handler
+  tools.py        # run_command and the file tools: input models, input_schema constants, handlers, tool sets
   prompts.py      # system prompt, tool description
   config.py       # model, limits, timeouts, image name, copy-in deny list
 tests/
@@ -184,4 +208,8 @@ The MVP passes when every task test succeeds on a toy repo and every safety test
 - [x] Ctrl+C while a reply is streaming goes to review without appending the partial reply (unit)
 - [x] With the context threshold set to 5,000, the task stops, says the context is full and goes to review (unit)
 - [x] Discarding leaves your repo unchanged; a failed `git apply --check` leaves it unchanged and saves the patch (docker)
+- [ ] `write_file` and `edit_file` with a path or content holding `"; touch /tmp/pwned`, `$(…)` or backticks write exactly those characters and never create `/tmp/pwned`, on the host or in the container (docker)
+- [ ] `read_file` on a 50 MB file holds at most 1,000,000 bytes in the harness (docker)
+- [ ] `edit_file` with zero matches, two matches, a binary file, or a `replace_all` result over 1,000,000 bytes returns `is_error` and leaves the file unchanged (unit)
+- [ ] `--bash-only` sends the `run_command` tool alone and a system prompt that names no file tools; neither text names `/workspace`, which only the first message does (unit)
 - [x] Normal exit, Ctrl+C and a crash all leave no `coding-agent` container running (`docker ps --filter label=coding-agent=1`) and write a trajectory (docker)
