@@ -2,7 +2,7 @@
 
 Phase 1 adds `coding-agent eval`: it runs the agent on the 50 tasks of SWE-bench Verified Mini, each inside that task's own SWE-bench Docker image, collects one patch per task, grades the patches with the official SWE-bench harness, and reports pass rate, cost and calls per run. It is done when the pipeline grades the official fixes as 50 of 50, a full Haiku 5.5 run finishes within budget, and two runs can be compared task by task.
 
-The design follows mini-swe-agent's SWE-bench runner: the repo is baked into the image at `/testbed`, bash is the only tool, and the result is a `git diff`. The agent loop, the `run_command` tool and the lockdown rules are the MVP's; only how code gets in and how results come out change.
+The design follows mini-swe-agent's SWE-bench runner: the repo is baked into the image at `/testbed` and the result is a `git diff`. The agent loop, its tools (`run_command` and the file tools, `SPEC.md` § File tools) and the lockdown rules are the MVP's; only how code gets in and how results come out change.
 
 ## At a glance
 
@@ -38,7 +38,7 @@ Each rule is tagged **First** (needed for the first trustworthy numbers) or **La
 - Claude Haiku 5.5 by default, `--model` to compare another model
 - Grading by the official SWE-bench harness, never a hand-written grader
 - One trajectory per task, a predictions file, and a summary report per run
-- Comparing two runs task by task
+- Comparing two runs task by task, including all tools against `--bash-only` (T1)
 - One reference run of mini-swe-agent on the same tasks and model
 - Runs on your Mac for debugging, on a rented x86 machine for full runs
 
@@ -47,7 +47,6 @@ Each rule is tagged **First** (needed for the first trustworthy numbers) or **La
 - Full Verified, Lite or Pro (once Verified Mini stops telling versions apart)
 - Model-graded code quality; custom task sets from your own repos
 - Running many tasks across several machines
-- A structured `edit_file` tool: added later only if the first runs' trajectories show bash edits failing, and then compared with `eval-compare`
 
 ## How an eval run works
 
@@ -124,7 +123,7 @@ The most important group: each rule stops the score from silently measuring the 
 | E5 | **Clean git history.** `/testbed/.git` is the repo's real history, and some images keep later commits (other branches, tags, reflog) that contain the fix. Before the baseline, ImageSetup keeps only the checked-out commit and its ancestors: it deletes every other branch, tag and remote ref and any stash, runs `git reflog expire --expire=now --all`, then `git gc --prune=now` | The model finds the real fix in hidden history and copies it | First |
 | M7 | **Baseline of the repo's own files.** First clean the history (E5), then add exactly the repo's own files to `/harness.git`, listed with `git -C /testbed ls-files -z`, never `git add -A --force`. Build files already in the image that `.gitignore` excludes (`.pyc`, `*.egg-info`, built `.so` files) stay out of the baseline. (MVP: S5, `git add -A --force` over everything copied in) | Rebuilt build files become binary changes in the patch and stop it applying | First |
 | M3 | **Conda environment.** Each command runs as `bash -lc <command>` with the image's conda environment `testbed` active; SWE-bench images keep the repo's Python packages there. Check how the images activate it when implementing. (MVP: `bash -lc <command>`) | Tests fail for setup reasons, not because the agent was wrong | First |
-| M5 | **True instructions.** The eval prompt (A4) and an eval tool description that names `/testbed` and replaces the MVP's "not a git repo" lines: `/testbed` is a git repo at the task's starting commit; `git diff`, `git log` and `git status` are fine to use; don't commit, stash or check out, because the files on disk are what gets graded. The input schema stays the same; each description has its own test that the schema matches `RunCommandInput` | Wrong instructions make the agent waste steps and work worse | First |
+| M5 | **True instructions.** The eval prompt (A4) and an eval tool description that names `/testbed` and replaces the MVP's "not a git repo" lines: `/testbed` is a git repo at the task's starting commit; `git diff`, `git log` and `git status` are fine to use; don't commit, stash or check out, because the files on disk are what gets graded. The file tools' descriptions name no folder (paths are relative to the working folder), so they are shared by both modes. The input schemas stay the same; each `run_command` description has its own test that the schema matches `RunCommandInput` | Wrong instructions make the agent waste steps and work worse | First |
 | A4 | **Eval prompt** in `prompts.py`: the issue text; the repo is at `/testbed` with no network; reproduce the problem first; change source files only, never tests or configuration; run the relevant tests; delete any scripts it wrote (e.g. `reproduce.py`) before finishing, since every new file in `/testbed` ends up in the patch; finish with a short summary | The agent edits tests to pass, or leaves scratch files in the patch | First |
 | E3 | **Gold check.** Before the first model run, grade the dataset's own fixes (`--predictions_path gold`). Every task must resolve; any that doesn't is listed in an exclusion file with the reason, and left out of all runs | Blaming the agent for a task that is broken | First |
 | E4 | **Same task list everywhere.** Tasks whose image fails to build are excluded the same way, so every run uses the same task list | Runs scored on different tasks look comparable when they aren't | First |
@@ -198,7 +197,7 @@ Everything for a run lives in `runs/<run id>/` in the coding-agent repo (git-ign
 
 ```
 runs/<run id>/
-  meta.json                  # model, settings, agent git commit, dataset revision, harness version, task list
+  meta.json                  # model, tool set (T1), settings, agent git commit, dataset revision, harness version, task list
   predictions-<trial>.jsonl  # one line per task, appended as each finishes (trial 1 with the default --trials 1)
   trajectories/<trial>/      # <instance_id>.json, same format as the MVP trajectory
   harness/                   # the official harness's logs and results

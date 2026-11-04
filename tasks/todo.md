@@ -12,6 +12,99 @@ Tasks marked **(user)** cost money or need a rented machine: only the user runs 
 
 ---
 
+## Before Phase A: File tools
+
+Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tools.md). Every slice is approved by the user before it starts (CLAUDE.md § Working style).
+
+## Task F1: Sandbox reads and writes file bytes
+
+**Description:** Two sandbox methods the file tools build on. `read_bytes(path, limit)` runs `head -c <limit> -- <path>` in the container. `write_bytes(path, data)` sends the bytes on `docker exec -i` stdin to `sh -c 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"' sh <path>` (T2, T4). Both use an argument list, a timeout, and raise `SandboxError` with the program's last error line.
+
+**Acceptance criteria:**
+- [ ] A path or content holding `"; touch /tmp/pwned`, `$(…)` or backticks is written exactly and creates no `/tmp/pwned*`, on the host or in the container
+- [ ] Reading a 50 MB file with `limit` 1,000,001 returns exactly that many bytes
+- [ ] A missing file raises `SandboxError` naming the problem
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest tests/test_sandbox.py` (Docker running)
+- [ ] All checks pass
+
+**Dependencies:** None
+
+**Files likely touched:** `src/coding_agent/sandbox.py`, `src/coding_agent/config.py`, `tests/test_sandbox.py`
+
+**Estimated scope:** Small
+
+---
+
+## Task F2: `read_file` and `write_file`
+
+**Description:** The two tools in `tools.py` (T3, T4), each with a pydantic input model, a hand-written `input_schema` and a handler returning a `ToolResult`. `read_file` numbers lines, stops at 10,000 characters with a footer naming the next `start_line`, cuts lines at 2,000 characters and reports binary files. `write_file` refuses content over 1,000,000 bytes. A NUL in a path is invalid input. Not yet sent to the model: F4 does that.
+
+**Acceptance criteria:**
+- [ ] `read_file` on a 1 MB+ file asks the sandbox for at most 1,000,001 bytes and says the file was cut
+- [ ] Line ranges, empty files, a `start_line` past the end and a missing file each give the result the spec says (unit tests, fake sandbox)
+- [ ] Each schema agrees with its pydantic model (unit test)
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest tests/test_file_tools.py`
+- [ ] All checks pass
+
+**Dependencies:** F1
+
+**Files likely touched:** `src/coding_agent/tools.py`, `src/coding_agent/prompts.py`, `src/coding_agent/config.py`, `tests/fakes.py`, `tests/test_file_tools.py`
+
+**Estimated scope:** Medium
+
+---
+
+## Task F3: `edit_file`
+
+**Description:** Exact-string replace (T5): `old_string` must appear once, or at least once with `replace_all`. The replace happens in host memory and the file goes back through `write_bytes`. The result shows the edited lines with their numbers.
+
+**Acceptance criteria:**
+- [ ] Zero matches, two matches without `replace_all`, old equal to new, a non-UTF-8 file, a file over 1,000,000 bytes and a `replace_all` result over 1,000,000 bytes are all `is_error` and leave the file unchanged
+- [ ] The size of a `replace_all` result is checked before it is built
+- [ ] One Docker test edits a real file whose name and content hold shell text
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest tests/test_file_tools.py` (Docker running for the one Docker test)
+- [ ] All checks pass
+
+**Dependencies:** F2
+
+**Files likely touched:** `src/coding_agent/tools.py`, `src/coding_agent/prompts.py`, `tests/test_file_tools.py`
+
+**Estimated scope:** Small
+
+---
+
+## Task F4: Tool sets and `--bash-only`
+
+**Description:** Two tool sets (T1): `all` (default: `run_command` with a description pointing at the file tools, plus the three file tools and the matching system prompt) and `bash` (today's system prompt and `run_command` alone). `Model` takes the tool set; the loop dispatches every tool call by name and prints one line per call (T6); `coding-agent --bash-only` picks `bash`; the trajectory records the set's name, system prompt and tools. README and CLAUDE.md mention the flag.
+
+**Acceptance criteria:**
+- [ ] `--bash-only` sends exactly today's `system` and `[run_command]`, byte for byte (unit)
+- [ ] With the default set, a fake model's `edit_file` call fixes the toy bug end to end and the diff applies (docker)
+- [ ] An unknown tool name gets an `is_error` result, never a crash
+
+**Verification:**
+- [ ] Tests pass: `uv run pytest` (Docker running)
+- [ ] All checks pass
+- [ ] Manual check: the user runs `coding-agent` once with and once without `--bash-only` on `../toy-repo`
+
+**Dependencies:** F3
+
+**Files likely touched:** `src/coding_agent/model.py`, `src/coding_agent/agent.py`, `src/coding_agent/__main__.py`, `tests/test_agent.py`, `tests/test_main.py`, `README.md`
+
+**Estimated scope:** Medium
+
+---
+
+## Checkpoint F: the File tools acceptance tests in `SPEC.md` checked off; review with the user; open the PR
+
+---
+
 ## Task 1: The `eval` extra and the dataset loader
 
 **Description:** Add `swebench` and `datasets` as an optional `eval` extra, after the `security-and-hardening` supply-chain check. Add `eval/dataset.py`: load `MariusHobbhahn/swe-bench-verified-mini`, split `test`, at a pinned revision (E1), and drop the tasks in `evals/exclusions.txt`. Only `coding_agent.eval` imports the new packages.

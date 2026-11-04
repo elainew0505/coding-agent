@@ -38,7 +38,7 @@ uv run pyright
 - Every model call goes through `Model.query()` in `model.py`. It streams (`client.beta.messages.stream(...)` + `get_final_message()`), because long turns otherwise hit timeouts, and opts into `fallbacks: "default"` only for models that support it (not Haiku 5.5).
 - History is append-only: append the full `response.content` each turn, never edit or delete earlier turns.
 - Keep `system` and `tools` byte-identical across turns so prompt caching hits; put anything that varies (timestamps, paths) in messages.
-- One custom tool, `run_command`, with an explicit `input_schema`; each call runs in a fresh shell (no state carries over), as in mini-swe-agent. Don't use the Anthropic-defined `bash` tool: its contract is a persistent session.
+- Custom tools only, each with an explicit `input_schema`: `run_command` (a fresh shell per call, no state carries over, as in mini-swe-agent) and the file tools (`SPEC.md` § File tools); `--bash-only` sends `run_command` alone. Don't use the Anthropic-defined `bash` tool: its contract is a persistent session.
 - Return all `tool_result` blocks for one turn in a single user message; failed tools return `is_error: True`. A non-zero exit code is a normal result, not a failure.
 - Don't use forced `tool_choice` (`any`/`tool`), assistant prefill, `temperature`/`top_p`/`top_k`, or `budget_tokens` — current models reject them.
 - The API changes quickly: check current docs (`source-driven-development` skill) rather than memory before using an API feature.
