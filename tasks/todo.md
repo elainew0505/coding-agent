@@ -333,7 +333,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 12: Live runs and the README (user)
 
-**Description:** A live test on 3 tasks with a low call cap (`--live` only). Then the user's first full Haiku 5.5 run on Verified Mini within the `--max-cost` budget. The README gains an eval section: install the extra, build or pull images, the gold check, a run, resume, reading the report, the known limitation about other runs during an eval.
+**Description:** A live test on 3 tasks with all tools and a low call cap (`--live` only). Then the user's first full Haiku 5.5 run on Verified Mini within the `--max-cost` budget. The README gains an eval section: install the extra, build or pull images, the gold check, a run, resume, reading the report, the known limitation about other runs during an eval.
 
 **Acceptance criteria:**
 - [ ] `uv run pytest` skips the live eval test; `uv run pytest --live` runs it (user only)
