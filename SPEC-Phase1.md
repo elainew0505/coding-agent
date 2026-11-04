@@ -102,7 +102,7 @@ The middle is used as it is: the loop (L1–L8), `run_command` and its output ca
 | ID | Requirement | Build |
 | --- | --- | --- |
 | E1 | Dataset `MariusHobbhahn/swe-bench-verified-mini`, split `test`, pinned to one revision recorded in each run's metadata | First |
-| E2 | Images: on x86 machines pull prebuilt SWE-bench images; on Apple Silicon build them locally (`--namespace ''`) or try Epoch AI's best-effort ARM images. Cache them between runs | First |
+| E2 | Images: on x86 machines pull prebuilt SWE-bench images; on Apple Silicon build them locally (`--namespace ''`) or try Epoch AI's best-effort ARM images. Cache them between runs. Image names and builds come from the `swebench` package, so the agent works in the same image the harness grades in | First |
 | A1 | Model `claude-haiku-5-5` by default; `--model` for a comparison run. `--bash-only` runs with `run_command` alone (`SPEC.md` T1), so `eval-compare` can show whether the file tools help. Model and tool set are recorded in `meta.json`, and resuming a run with a different model or tool set is refused, so one run never mixes them. Effort `medium`, prompt caching on, as in the MVP | First |
 | A3 | Call cap 50 per task to start; lower it once the cost curve from the first runs shows where extra calls stop helping | First |
 | A5 | Every stop reason (done, call cap, context limit, refusal, API error) still records whatever diff exists, so the task is graded rather than lost | First |

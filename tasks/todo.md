@@ -109,11 +109,12 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 2: The gold check
 
-**Description:** `eval/images.py` pulls each task's image on x86 or builds it with `--namespace ''` on Apple Silicon, reusing cached ones (E2). `eval/grade.py` runs the official harness and reads its per-task results. A gold-check command grades the dataset's own fixes (`--predictions_path gold`, E3) and writes every task that fails to build or resolve into `evals/exclusions.txt` with the reason (E3, E4). It needs no agent code and no model, so it finds image and grading problems first.
+**Description:** `eval/images.py` pulls each task's image on x86 or builds it with `--namespace ''` on Apple Silicon, reusing cached ones (E2). It takes each image's name and build steps from the `swebench` package, never its own, so the agent works in the same image the harness grades in. `eval/grade.py` runs the official harness and reads its per-task results. A gold-check command grades the dataset's own fixes (`--predictions_path gold`, E3) and writes every task that fails to build or resolve into `evals/exclusions.txt` with the reason (E3, E4). It needs no agent code and no model, so it finds image and grading problems first.
 
 **Acceptance criteria:**
 - [ ] The gold check runs on the Mac and records the harness version
 - [ ] Every task either resolves or is in `evals/exclusions.txt` with a reason
+- [ ] After the gold check, the harness reuses the images `images.py` prepared and builds no second copy
 - [ ] `grade.py` maps the harness's results to resolved, unresolved, empty patch or error (unit test on a saved harness results file)
 
 **Verification:**
