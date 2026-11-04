@@ -116,7 +116,7 @@ The `run_command` description (with all tools) says to use the file tools for re
 Known limitations, accepted for the MVP (none can change your repo without the review):
 
 - **Global ignore rules.** Copy-in (S4) also honours your global gitignore (`core.excludesFile`) and `.git/info/exclude`, but the container's harness git only sees the repo's `.gitignore`. Files the model creates that only your global rules ignore (e.g. a `.venv/`) show up in the diff; discard or ignore them in the repo's `.gitignore`.
-- **`/harness.git` is writable by the model.** It runs as root in the container, so it could delete the harness repo; the diff then fails and the run ends without a review. Your repo is unchanged; the run's work is lost.
+- **`/harness.git` is writable by the model.** It runs as root in the container, so it could delete the harness repo through `run_command` or the file tools, which don't guard it; the diff then fails and the run ends without a review. Your repo is unchanged; the run's work is lost.
 - **A dead container.** If the container stops mid-run, each later command reports Docker's error as an ordinary non-zero exit, so the model may spend calls retrying before the run ends; the diff then fails and there is nothing to review.
 
 ## Output
