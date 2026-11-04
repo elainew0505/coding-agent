@@ -45,6 +45,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 **Acceptance criteria:**
 - [ ] Zero matches, two matches without `replace_all`, old equal to new, a non-UTF-8 file, a file over 1,000,000 bytes and a `replace_all` result over 1,000,000 bytes are all `is_error` and leave the file unchanged
 - [ ] The size of a `replace_all` result is checked before it is built
+- [ ] On a CRLF file, an `old_string` with plain `\n` gives the CRLF error, and one with `\r\n` edits the file
 - [ ] One Docker test edits a real file whose name and content hold shell text
 
 **Verification:**
