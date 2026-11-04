@@ -483,14 +483,16 @@ def demo(image):
             print(sb.run(cmd, timeout))
 
         show(
-            "command -v python >/dev/null && python -m pytest -q || echo '(no python in this image)'"
+            "if command -v python >/dev/null; then python -m pytest -q; "
+            "else echo '(no python in this image)'; fi"
         )
         if (root / "calc" / "ranges.py").exists():
             show("sed -i 's/range(start, end))/range(start, end + 1))/' calc/ranges.py")
         else:
             show("echo 'demo change' > SANDBOX_DEMO.txt")
         show(
-            "command -v python >/dev/null && python -m pytest -q || echo '(no python in this image)'"
+            "if command -v python >/dev/null; then python -m pytest -q; "
+            "else echo '(no python in this image)'; fi"
         )
 
         d = sb.diff()
