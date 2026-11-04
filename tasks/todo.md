@@ -249,10 +249,10 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 8: The eval runner and `coding-agent eval`
 
-**Description:** `eval/runner.py` runs the selected tasks one after another, each in a fresh container, into `runs/<run id>/` (`meta.json`, `predictions-1.jsonl`, `trajectories/1/`). Resume (R4): skip tasks already in the predictions file. Clean Ctrl+C (R5): stop the current task, remove its container, end the run without recording it. CLI: `coding-agent eval [--model ID] [--limit N | --instances ID,...] [--run-id ID]`. `runs/` is git-ignored.
+**Description:** `eval/runner.py` runs the selected tasks one after another, each in a fresh container, into `runs/<run id>/` (`meta.json`, `predictions-1.jsonl`, `trajectories/1/`). Resume (R4): skip tasks already in the predictions file. Clean Ctrl+C (R5): stop the current task, remove its container, end the run without recording it. CLI: `coding-agent eval [--model ID] [--bash-only] [--limit N | --instances ID,...] [--run-id ID]`; `--bash-only` picks the `bash` tool set from FT3 (A1). `runs/` is git-ignored.
 
 **Acceptance criteria:**
-- [ ] `meta.json` records model, settings, agent git commit, dataset revision, harness version and the task list
+- [ ] `meta.json` records model, tool set, settings, agent git commit, dataset revision, harness version and the task list; resuming with a different model or tool set is refused
 - [ ] A run stopped after 2 of 4 tasks resumes and runs only the other 2 (unit test, fake model and sandbox)
 - [ ] After Ctrl+C, no container from the run is left running, and the interrupted task isn't in the predictions file (Docker test)
 
@@ -260,7 +260,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 - [ ] Tests pass: `uv run pytest tests/test_eval_runner.py`
 - [ ] All checks pass
 
-**Dependencies:** Task 7
+**Dependencies:** Task 7 and FT3
 
 **Files likely touched:** `src/coding_agent/eval/runner.py`, `src/coding_agent/__main__.py`, `.gitignore`, `tests/test_eval_runner.py`
 
