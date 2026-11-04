@@ -60,10 +60,10 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task FT3: Tool sets and `--bash-only`
 
-**Description:** Two tool sets (T1): `all` (default: `run_command` with a description pointing at the file tools, plus the three file tools and the matching system prompt) and `bash` (today's system prompt and `run_command` alone). `Model` takes the tool set; the loop dispatches every tool call by name and prints one line per call (T6); `coding-agent --bash-only` picks `bash`; the trajectory records the set's name, system prompt and tools. README and CLAUDE.md mention the flag.
+**Description:** Two tool sets (T1): `all` (default: `run_command` with a description pointing at the file tools, plus the three file tools and the matching system prompt) and `bash` (`run_command` alone). Both sets' system prompts and descriptions name no folder and no git rule: those facts move to the first user message (`SPEC.md` § First message), so the eval can reuse the same texts. `Model` takes the tool set; the loop dispatches every tool call by name and prints one line per call (T6); `coding-agent --bash-only` picks `bash`; the trajectory records the set's name, system prompt and tools. README and CLAUDE.md mention the flag.
 
 **Acceptance criteria:**
-- [ ] `--bash-only` sends exactly today's `system` and `[run_command]`, byte for byte (unit)
+- [ ] `--bash-only` sends `[run_command]` alone; no system prompt or tool description names `/workspace`, and the first message does (unit)
 - [ ] With the default set, a fake model's `edit_file` call fixes the toy bug end to end and the diff applies (docker)
 - [ ] An unknown tool name gets an `is_error` result, never a crash
 
@@ -199,14 +199,14 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ---
 
-## Task 6: Eval prompt and tool description
+## Task 6: Eval first message
 
-**Description:** The eval system prompt (A4: issue text, `/testbed`, no network, reproduce first, source files only, run tests, delete scratch scripts, short summary) and the eval tool description (M5: `/testbed` is a git repo at the starting commit; `git diff`/`log`/`status` fine; no commit, stash or checkout). ImageSetup provides both; the input schema is shared.
+**Description:** The eval's first user message (A4, M5): `/testbed` is a git repo at the starting commit; `git diff`/`log`/`status` fine, no commit, stash or checkout; no network; reproduce first; source files only; run tests; delete scratch scripts; short summary; then the issue text. ImageSetup provides it. The system prompt and tool descriptions are the shared ones from FT3, unchanged.
 
 **Acceptance criteria:**
-- [ ] The schema-matches-`RunCommandInput` test runs for both tool definitions
-- [ ] Requests in eval mode have byte-identical `system` and `tools` across turns (fake client)
-- [ ] The issue text goes in the first user message, not the system prompt, so the system prompt is the same for every task
+- [ ] With either tool set, eval requests send exactly the same `system` and `tools` as `coding-agent` with that set (fake client)
+- [ ] The facts and the issue text are in the first user message only, so `system` is the same for every task
+- [ ] Neither the system prompt nor any tool description mentions `/workspace` or `/testbed` (unit test over both tool sets)
 
 **Verification:**
 - [ ] Tests pass: `uv run pytest tests/test_tools.py tests/test_eval_mode.py`

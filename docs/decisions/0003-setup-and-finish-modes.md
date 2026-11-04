@@ -14,7 +14,7 @@ Phase 1 (`SPEC-Phase1.md`) runs the agent on SWE-bench Verified Mini. Most of th
 ## Options
 
 1. **Flags in the existing code.** Add `if eval_mode:` wherever `/workspace`, copy-in, the baseline, the prompts or review appear. Little code to start with, but the checks spread through `sandbox.py`, `agent.py` and `__main__.py`, and every MVP safety rule then has an eval branch next to it.
-2. **Setup and Finish around a shared middle.** A Setup supplies the image, working folder, command prefix, limits, system prompt and tool description, gets the code in and takes the baseline. A Finish takes the diff and the stop reason. The MVP is CopyInSetup + ReviewAndApply, eval is ImageSetup + RecordPrediction. The loop and sandbox take their settings from the Setup and know nothing about modes.
+2. **Setup and Finish around a shared middle.** A Setup supplies the image, working folder, command prefix, limits and the first message's facts, gets the code in and takes the baseline. A Finish takes the diff and the stop reason. The MVP is CopyInSetup + ReviewAndApply, eval is ImageSetup + RecordPrediction. The loop and sandbox take their settings from the Setup and know nothing about modes.
 3. **A separate eval agent.** Write a second loop for eval, or run mini-swe-agent itself. Then the eval no longer measures this agent, and the two loops drift apart.
 
 ## Decision
@@ -25,7 +25,7 @@ Option 2, as specified in `SPEC-Phase1.md` § Group 1 · The core (M1–M7, F1�
 
 - The MVP's code is moved behind the two seams with no change in behaviour, and its tests must pass unchanged. That is the first step of Phase 1, before any eval code.
 - The loop and sandbox lose their hard-coded `/workspace`, image and limits. Each mode's values are fixed for a whole run, so `system` and `tools` stay byte-identical across turns and prompt caching still hits.
-- Each mode has its own tool description, so the schema-matches-`RunCommandInput` test runs for each one.
+- The system prompt and tool descriptions are shared by both modes (one version per tool set) and name no folder or git rule; each mode's facts go in the first user message (`SPEC.md` § First message).
 - ImageSetup skips copy-in and the deny list (S4, S9). That is safe because no host files enter the container: the only host data is the issue text from the dataset. The lockdown flags still apply to the third-party task images.
 - A later mode slots in the same way, e.g. a Phase 3 Finish that commits to a branch instead of asking apply/discard.
 - One more layer to read: a reader following a run goes through `modes.py` instead of one straight sequence in `__main__.py`.

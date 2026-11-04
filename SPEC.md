@@ -77,12 +77,11 @@ The agent runs as root inside the container. That is fine here: with no mounts, 
 | On timeout | The in-container `timeout` kills the command (exit 124); the host gets `timeout + 10` as a backstop |
 | Approval | None per command; the diff review is the checkpoint |
 
-The tool description tells the model:
+The tool description names no folder and no git rule, so the same text works in every mode (§ First message). It tells the model:
 
-- Each call starts a fresh shell in `/workspace`; `cd` does not carry over, so chain with `&&`
+- Each call starts a fresh shell in the working folder; `cd` does not carry over, so chain with `&&`
 - There is no network: no `pip install`, `curl` or `git clone`
-- Edit files with heredocs (`cat <<'EOF' > file`), `sed -i` or a short Python script
-- `/workspace` is not a git repo and must not become one: don't run `git init` anywhere in it; the harness tracks changes itself
+- With `--bash-only`: edit files with heredocs (`cat <<'EOF' > file`), `sed -i` or a short Python script. With all tools: read and edit files with the file tools, and use `run_command` for everything else
 
 The in-container `timeout` matters: killing the host-side `docker exec` alone leaves the command running inside the container. For the same reason, on Ctrl+C or when the host backstop fires, the harness runs `docker exec agent-<id> bash -c 'kill -KILL -1'` (the slim image has no `kill` program, only the shell builtin). That kills every process in the container except PID 1 (`sleep infinity`), including anything the command started in the background, so nothing is still writing files when the diff is taken.
 
@@ -94,7 +93,7 @@ Three tools for reading and editing files, next to `run_command` ([0004](docs/de
 
 | ID | Requirement |
 | --- | --- |
-| T1 | **Tool sets.** By default every request sends all four tools, and the system prompt and `run_command` description name the file tools. `--bash-only` sends `run_command` alone with today's texts, so the eval can compare the two. The set is fixed for the whole run (byte-identical `tools` and `system`) and recorded in the trajectory |
+| T1 | **Tool sets.** By default every request sends all four tools, and the system prompt and `run_command` description name the file tools. `--bash-only` sends `run_command` alone, with a system prompt and description that name no file tools, so the eval can compare the two. The set is fixed for the whole run (byte-identical `tools` and `system`) and recorded in the trajectory |
 | T2 | **Paths.** Any path the model gives is relative to the working folder (`/workspace`) or absolute inside the container, and is always passed as its own argument after `--`, never inside a shell string. The container is the boundary, so paths outside the working folder are allowed there, as they are for `run_command` |
 | T3 | **`read_file`** `{path, start_line?, end_line?}`: returns the lines with their numbers (`cat -n` style). It reads at most 1,000,000 bytes (`head -c` in the container). Output stops at 10,000 characters and each line at 2,000, and a footer gives the lines shown, the total, and the `start_line` to continue from. A file with a NUL byte in its first 8,000 bytes is reported as binary, as an error |
 | T4 | **`write_file`** `{path, content}`: writes the whole file, creating it and any missing folders, or replacing it. Content is at most 1,000,000 characters. The bytes go in on `docker exec -i` stdin to `sh -c 'mkdir -p … && cat > "$1"'`, with the path as `$1`, so no part of the path or content is ever parsed as shell. Returns the line count written |
@@ -128,14 +127,22 @@ Known limitations, accepted for the MVP (none can change your repo without the r
 
 ## System prompt
 
-A short, fixed text in `prompts.py` that tells the model:
+A short, fixed text in `prompts.py`, one per tool set (T1). It names no folder and says nothing about git or who checks the work, so the same text works in every mode: those facts are in the first message. It tells the model:
 
-- It is a coding agent working on a copy of the user's repo at `/workspace`, with no network
-- Which tools it has: with all tools, to read and edit with the file tools and use `run_command` for everything else; with `--bash-only`, today's text, which names `run_command` as its one tool
+- It is a coding agent working on a repo inside a container, with no network
+- Which tools it has: with all tools, to read and edit with the file tools and use `run_command` for everything else; with `--bash-only`, that `run_command` is its one tool
 - To explore (`ls`, `cat`, `grep`) before editing
 - To run the tests after a change when the repo has them
-- That the user reviews a diff of all its changes at the end, so it should keep changes focused
 - To finish with a short summary of what it changed and how it checked
+
+## First message
+
+The first user message holds the task and the facts of this mode, so `system` and `tools` stay the same in every mode and caching still hits. For `coding-agent` it says:
+
+- The repo is a copy of the user's repo at `/workspace`
+- `/workspace` is not a git repo and must not become one: don't run `git init` anywhere in it; the harness tracks changes itself
+- The user reviews a diff of every change at the end, so keep changes focused
+- Then the task, as the user typed it
 
 ## Trajectory
 
@@ -203,5 +210,5 @@ The MVP passes when every task test succeeds on a toy repo and every safety test
 - [ ] `write_file` and `edit_file` with a path or content holding `"; touch /tmp/pwned`, `$(…)` or backticks write exactly those characters and never create `/tmp/pwned`, on the host or in the container (docker)
 - [ ] `read_file` on a 50 MB file holds at most 1,000,000 bytes in the harness (docker)
 - [ ] `edit_file` with zero matches, two matches, a binary file, or a `replace_all` result over 1,000,000 bytes returns `is_error` and leaves the file unchanged (unit)
-- [ ] `--bash-only` sends exactly today's `system` and the `run_command` tool alone (unit)
+- [ ] `--bash-only` sends the `run_command` tool alone and a system prompt that names no file tools; neither text names `/workspace`, which only the first message does (unit)
 - [x] Normal exit, Ctrl+C and a crash all leave no `coding-agent` container running (`docker ps --filter label=coding-agent=1`) and write a trajectory (docker)

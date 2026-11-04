@@ -19,7 +19,7 @@ The MVP gives Claude one tool, `run_command`, and the tool description tells it 
 
 Option 3, as specified in `SPEC.md` § File tools (T1–T6):
 
-- On by default; `--bash-only` sends `run_command` alone with today's texts, and the tool set is recorded, so `eval-compare` can compare them.
+- On by default; `--bash-only` sends `run_command` alone, and the tool set is recorded, so `eval-compare` can compare them.
 - `edit_file` replaces an exact string that must appear once (or with `replace_all`), the most common shape in coding agents and robust to lines shifting.
 - The read and replace logic runs in host memory: the harness reads bytes with `docker exec … head -c`, and writes them back on `docker exec -i` stdin. Only `head`, `cat` and `sh` are needed in the container, so the tools work the same in the agent image and every SWE-bench image, and the logic is unit-testable without Docker.
 
