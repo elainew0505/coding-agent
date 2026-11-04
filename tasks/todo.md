@@ -110,7 +110,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task 2: The gold check
 
-**Description:** `eval/images.py` pulls each task's image on x86 or builds it with `--namespace ''` on Apple Silicon, reusing cached ones (E2). It takes each image's name and build steps from the `swebench` package, never its own, so the agent works in the same image the harness grades in. `eval/grade.py` runs the official harness and reads its per-task results. A gold-check command grades the dataset's own fixes (`--predictions_path gold`, E3) and writes every task that fails to build or resolve into `evals/exclusions.txt` with the reason (E3, E4). It needs no agent code and no model, so it finds image and grading problems first.
+**Description:** `eval/images.py` pulls each task's image on x86 or builds it with `--namespace ''` on Apple Silicon, reusing cached ones (E2). It takes each image's name and build steps from the `swebench` package, never its own, so the agent works in the same image the harness grades in. `eval/grade.py` runs the official harness and reads its per-task results. A gold-check command grades the dataset's own fixes (`--predictions_path gold`, E3) and writes every task that fails to build or resolve into `evals/exclusions.txt` with the reason (E3, E4). It needs no agent code and no model, so it finds image and grading problems first. The command takes `--instances ID,...`, and it runs on 2–3 tasks before all 50, so a wrong flag or harness version shows up in minutes, not after hours of image builds.
 
 **Acceptance criteria:**
 - [ ] The gold check runs on the Mac and records the harness version
@@ -121,7 +121,7 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 **Verification:**
 - [ ] Tests pass: `uv run pytest tests/test_eval_grade.py`
 - [ ] All checks pass
-- [ ] Manual check: the gold check on the Mac; the count of resolved tasks is noted in the commit
+- [ ] Manual check: the gold check on 2–3 tasks on the Mac, then on all 50; the count of resolved tasks is noted in the commit
 
 **Dependencies:** Task 1
 
