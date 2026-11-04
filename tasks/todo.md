@@ -18,10 +18,11 @@ Spec: `SPEC.md` § File tools (T1–T6), [0004](../docs/decisions/0004-file-tool
 
 ## Task FT1: `read_file` and `write_file`, with the sandbox methods they need
 
-**Description:** Two sandbox methods, then the two tools on top of them. `read_bytes(path, limit)` runs `head -c <limit> -- <path>` in the container; `write_bytes(path, data)` sends the bytes on `docker exec -i` stdin to `sh -c 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"' sh <path>` (T2, T4). Both use an argument list and a timeout, and raise `SandboxError` with the program's last error line. On top, `read_file` and `write_file` in `tools.py` (T3, T4), each with a pydantic input model, a hand-written `input_schema` and a handler returning a `ToolResult`: `read_file` numbers lines, stops at 10,000 characters with a footer naming the next `start_line`, cuts lines at 2,000 characters and reports binary files; `write_file` refuses content over 1,000,000 bytes; a NUL in a path is invalid input. Not yet sent to the model: FT3 does that.
+**Description:** Two sandbox methods, then the two tools on top of them. `read_bytes(path, limit)` runs `head -c <limit> -- <path>` in the container; `write_bytes(path, data)` sends the bytes on `docker exec -i` stdin to `sh -c 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"' sh <path>` (T2, T4). Both run with the same `-w` working folder as `run()`, not `_exec`'s `-w /`, pass the path unchanged, use an argument list and a timeout, and raise `SandboxError` with the program's last error line. On top, `read_file` and `write_file` in `tools.py` (T3, T4), each with a pydantic input model, a hand-written `input_schema` and a handler returning a `ToolResult`: `read_file` numbers lines, stops at 10,000 characters with a footer naming the next `start_line`, cuts lines at 2,000 characters and reports binary files; `write_file` refuses content over 1,000,000 bytes; a NUL in a path is invalid input. Not yet sent to the model: FT3 does that.
 
 **Acceptance criteria:**
 - [ ] A path or content holding `"; touch /tmp/pwned`, `$(…)` or backticks is written exactly and creates no `/tmp/pwned*`, on the host or in the container (docker)
+- [ ] A file written by relative path with `write_file` reads back with `run_command` `cat <path>` (docker)
 - [ ] `read_file` on a 50 MB file holds at most 1,000,001 bytes and says the file was cut; line ranges, empty files, a `start_line` past the end and a missing file each give the result the spec says
 - [ ] Each schema agrees with its pydantic model (unit test)
 
