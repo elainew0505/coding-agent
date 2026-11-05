@@ -26,6 +26,7 @@ from coding_agent.sandbox import (
     Sandbox,
     SandboxError,
     apply_patch,
+    demo,
     find_repo_root,
     is_denied,
 )
@@ -257,6 +258,17 @@ def test_no_container_is_left_behind(image, how):
     except (RuntimeError, KeyboardInterrupt):
         pass
     assert not _container_exists(sandbox.name)
+
+
+def test_demo_reports_a_failing_test_run_as_a_failure(image, repo, monkeypatch, capsys):
+    # The image has python, but this repo has no tests, so pytest exits non-zero.
+    # The demo must show that exit code, not claim "no python in this image".
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "d")
+    demo(image)
+    out = capsys.readouterr().out
+    assert "\n(no python in this image)\n" not in out  # the output line, not the echoed command
+    assert "exit_code: 5" in out  # pytest's "no tests ran"
 
 
 # --- run by hand -------------------------------------------------------------
